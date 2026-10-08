@@ -114,7 +114,7 @@ export function addSource(researchId, source) {
 }
 
 /**
- * Add a verified claim to a research session.
+ * Add or update a verified claim in a research session.
  * @param {string} researchId
  * @param {object} claim
  * @returns {object|null} Updated session
@@ -123,7 +123,17 @@ export function addClaim(researchId, claim) {
   const session = sessions.get(researchId);
   if (!session) return null;
 
-  session.claims.push({ ...claim, addedAt: new Date().toISOString() });
+  const existingIdx = session.claims.findIndex((c) => c.id === claim.id);
+  if (existingIdx >= 0) {
+    session.claims[existingIdx] = {
+      ...session.claims[existingIdx],
+      ...claim,
+      updatedAt: new Date().toISOString(),
+    };
+  } else {
+    session.claims.push({ ...claim, addedAt: new Date().toISOString() });
+  }
+
   session.updatedAt = new Date().toISOString();
   return session;
 }

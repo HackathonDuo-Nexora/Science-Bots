@@ -151,10 +151,10 @@ function calculateRelevance(topic, title, snippet) {
  * Extract initial pending claims from real source snippets.
  * Each claim references an existing source ID.
  */
-function extractClaims(sources, topic) {
+function extractClaims(sources, topic, pass = 'initial') {
   const claims = [];
 
-  for (const source of sources.slice(0, 3)) {
+  for (const source of sources.slice(0, 2)) {
     let claimText = '';
     if (source.snippet && source.snippet.length > 40) {
       const sentences = source.snippet
@@ -172,7 +172,7 @@ function extractClaims(sources, topic) {
     }
 
     if (!claimText) {
-      claimText = `Evidence from "${source.title}" indicates significant impact within ${topic}.`;
+      claimText = `Evidence from "${source.title}" indicates measurable impact within ${topic}.`;
     }
 
     claims.push({
@@ -180,6 +180,16 @@ function extractClaims(sources, topic) {
       text:      claimText,
       status:    'pending',
       sourceIds: [source.id],
+    });
+  }
+
+  // Formulate an exploratory gap claim on initial pass that requires broader empirical cross-validation
+  if (pass === 'initial' && sources.length >= 2) {
+    claims.push({
+      id:        `claim_${crypto.randomUUID().replace(/-/g, '')}`,
+      text:      `Long-term empirical validation is required to quantify how "${topic}" mitigates systemic zero-day vulnerabilities in production infrastructure.`,
+      status:    'pending',
+      sourceIds: [],
     });
   }
 
@@ -220,7 +230,7 @@ export async function search({ topic, existingSources = [], pass = 'initial' }) 
 
   const contactEmail = process.env.RESEARCH_CONTACT_EMAIL || 'research@sciencebots.org';
   const controller   = new AbortController();
-  const timeoutId    = setTimeout(() => controller.abort(), 12000);
+  const timeoutId    = setTimeout(() => controller.abort(), 25000);
 
   let data;
   try {
@@ -239,7 +249,7 @@ export async function search({ topic, existingSources = [], pass = 'initial' }) 
     data = await res.json();
   } catch (err) {
     if (err.name === 'AbortError') {
-      throw new Error('OpenAlex search request timed out after 12s.');
+      throw new Error('OpenAlex search request timed out after 25s.');
     }
     throw err;
   } finally {
@@ -298,7 +308,7 @@ export async function search({ topic, existingSources = [], pass = 'initial' }) 
   }
 
   // Extract pending claims referencing these sources
-  const claims = extractClaims(sources, cleanTopic);
+  const claims = extractClaims(sources, cleanTopic, pass);
 
   return { sources, claims };
 }
