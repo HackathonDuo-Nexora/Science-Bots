@@ -3,74 +3,90 @@
  *
  * Provider selector for the Researcher agent.
  *
- * Reads RESEARCH_MODE from environment:
- *   demo  — use demoResearchProvider (default, safe fallback)
- *   real  — use real research implementation (placeholder for Phase 4)
+ * Reads configuration from environment:
+ *   RESEARCH_MODE:
+ *     demo  — use demoResearchProvider (deterministic demo data)
+ *     real  — use realResearchProvider (OpenAlex scholarly search)
+ *   RESEARCH_FALLBACK_TO_DEMO:
+ *     true (default) — fall back to demo if real search encounters errors
+ *     false          — return empty/no fallback on real search error
  *
  * Interface exported:
- *   search({ topic, existingSources, pass }) → { sources: [] }
+ *   search({ topic, existingSources, pass }) → Promise<{ sources: [], claims: [], usedFallback?: boolean }>
+ *   getResearchMode() → 'demo' | 'real'
+ *   shouldFallbackToDemo() → boolean
  *
- * The engine always calls this function — never a specific provider directly.
- * Swap the implementation here when the real provider is ready.
+ * The engine always calls this module — never a specific provider directly.
  */
 
 import { search as demoSearch } from './demoResearchProvider.js';
+import { search as realSearch } from './realResearchProvider.js';
 
-// ─── Real provider placeholder ────────────────────────────────────────────────
-// Replace this with actual implementation in Phase 4.
-// Should accept the same interface: { topic, existingSources, pass }
-async function realSearch(opts) {
-  // TODO (Phase 4): Implement real research using search APIs / n8n / AI tools.
-  // For now, throw so the caller can fall back to demo mode gracefully.
-  throw new Error('Real research provider is not yet implemented. Set RESEARCH_MODE=demo.');
+/**
+ * Get current configured research mode.
+ * Evaluated per-call so runtime or environment updates take effect immediately.
+ * @returns {'demo' | 'real' | string}
+ */
+export function getResearchMode() {
+  return (process.env.RESEARCH_MODE ?? 'demo').trim().toLowerCase();
 }
 
-// ─── Provider selector ────────────────────────────────────────────────────────
+/**
+ * Determine if fallback to demo provider is enabled when real search fails.
+ * Defaults to true for resilience.
+ * @returns {boolean}
+ */
+export function shouldFallbackToDemo() {
+  const val = process.env.RESEARCH_FALLBACK_TO_DEMO;
+  if (val === undefined || val === null || val === '') return true;
+  return val.trim().toLowerCase() !== 'false';
+}
 
-const RESEARCH_MODE = (process.env.RESEARCH_MODE ?? 'demo').trim().toLowerCase();
-
-console.log(`[ResearchProvider] Mode: ${RESEARCH_MODE}`);
+console.log(`[ResearchProvider] Initialized. Default Mode: ${getResearchMode()}, Fallback: ${shouldFallbackToDemo()}`);
 
 /**
  * Perform a research search using the configured provider.
  *
- * Falls back to demo provider automatically if:
- *   - RESEARCH_MODE=real but the real provider fails
- *   - RESEARCH_MODE is unrecognised
+ * Safely handles errors and falls back to demo provider if configured,
+ * ensuring the Express server never crashes.
  *
  * @param {object}   opts
  * @param {string}   opts.topic           - Research topic
- * @param {object[]} opts.existingSources - Already-collected sources
+ * @param {object[]} opts.existingSources - Already-collected sources (for dedup)
  * @param {string}   opts.pass            - 'initial' | 'supplementary'
- * @returns {Promise<{ sources: object[], usedFallback?: boolean }>}
+ * @returns {Promise<{ sources: object[], claims: object[], usedFallback?: boolean }>}
  */
 export async function search(opts) {
-  if (RESEARCH_MODE === 'demo') {
+  const mode = getResearchMode();
+
+  if (mode === 'demo') {
     return demoSearch(opts);
   }
 
-  if (RESEARCH_MODE === 'real') {
+  if (mode === 'real') {
     try {
       const result = await realSearch(opts);
-      return result;
+      return { ...result, usedFallback: false };
     } catch (err) {
-      console.warn(`[ResearchProvider] Real provider failed: ${err.message}`);
-      console.warn('[ResearchProvider] Falling back to demo provider.');
-      const fallback = await demoSearch(opts);
-      return { ...fallback, usedFallback: true };
+      console.warn(`[ResearchProvider] Real search provider failed: ${err.message}`);
+
+      if (shouldFallbackToDemo()) {
+        console.warn('[ResearchProvider] RESEARCH_FALLBACK_TO_DEMO=true — falling back safely to demo provider.');
+        try {
+          const fallback = await demoSearch(opts);
+          return { ...fallback, usedFallback: true };
+        } catch (fallbackErr) {
+          console.error(`[ResearchProvider] Fallback provider also failed: ${fallbackErr.message}`);
+          return { sources: [], claims: [], usedFallback: true };
+        }
+      }
+
+      console.warn('[ResearchProvider] RESEARCH_FALLBACK_TO_DEMO=false — returning empty results.');
+      return { sources: [], claims: [], usedFallback: false };
     }
   }
 
   // Unrecognised mode — warn and use demo
-  console.warn(`[ResearchProvider] Unknown RESEARCH_MODE "${RESEARCH_MODE}" — defaulting to demo.`);
+  console.warn(`[ResearchProvider] Unknown RESEARCH_MODE "${mode}" — defaulting to demo.`);
   return demoSearch(opts);
-}
-
-/**
- * Returns the currently active research mode.
- * Useful for logging and event payloads.
- * @returns {'demo'|'real'|string}
- */
-export function getResearchMode() {
-  return RESEARCH_MODE;
 }

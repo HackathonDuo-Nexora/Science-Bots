@@ -73,6 +73,7 @@ export async function search({ topic, existingSources = [], pass = 'initial' }) 
           demo:       true,
         },
       ],
+      claims: [],
     };
   }
 
@@ -90,10 +91,11 @@ export async function search({ topic, existingSources = [], pass = 'initial' }) 
           demo:       true,
         },
       ],
+      claims: [],
     };
   }
 
   // Unknown pass — return empty safely
   console.warn(`[DemoResearchProvider] Unknown pass "${pass}" — returning no sources.`);
-  return { sources: [] };
+  return { sources: [], claims: [] };
 }
