@@ -1,0 +1,588 @@
+/**
+ * agentEngine.js
+ *
+ * Deterministic demo agent engine for Science Bots.
+ *
+ * Simulates the full autonomous research pipeline:
+ *   Orchestrator → Researcher → Analyzer → Researcher → Analyzer
+ *                → Writer → Reviewer → Writer → Reviewer → DONE
+ *
+ * DEMO MODE — no real AI or external APIs.
+ * All sources, claims, and paper content are clearly marked demo data.
+ * Replace with real AI integration in Phase 3 without changing the event contract.
+ *
+ * Target runtime: 30–50 seconds.
+ */
+
+import {
+  createEvent,
+  emit,
+  EVENT_TYPES,
+  AGENT_IDS,
+  AGENT_STATES,
+} from './eventService.js';
+
+import {
+  getResearch,
+  updateResearch,
+  updateAgent,
+  addSource,
+  addClaim,
+  setPaper,
+  appendEvent,
+  RESEARCH_STATUS,
+} from './researchService.js';
+
+// ─── Utility ──────────────────────────────────────────────────────────────────
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Monotonic counters — scoped per-call in buildDemoSources so parallel
+// sessions each get consistent IDs tied to their own timestamps.
+function makeIdGen(prefix) {
+  let n = 0;
+  return () => `${prefix}_${++n}_${Date.now()}`;
+}
+
+/**
+ * Emit a canonical event AND persist it to the session event log.
+ */
+function fire(researchId, opts) {
+  const event = createEvent(opts);
+  appendEvent(researchId, event);
+  emit(researchId, event);
+  return event;
+}
+
+/**
+ * Update an agent's in-memory state and emit an agent_update event.
+ */
+async function agentUpdate(researchId, agentId, state, action, message, payload = {}) {
+  updateAgent(researchId, agentId, { state, action, message });
+  updateResearch(researchId, { currentAgent: agentId });
+  fire(researchId, {
+    type:    EVENT_TYPES.AGENT_UPDATE,
+    agent:   agentId,
+    status:  state,
+    action,
+    message,
+    payload,
+  });
+}
+
+/**
+ * Mark the from-agent as waiting and emit a handoff event.
+ */
+async function handoff(researchId, fromAgent, toAgent, message) {
+  updateAgent(researchId, fromAgent, { state: AGENT_STATES.WAITING, action: 'waiting', message: null });
+  fire(researchId, {
+    type:    EVENT_TYPES.HANDOFF,
+    agent:   fromAgent,
+    status:  AGENT_STATES.WAITING,
+    action:  'handoff',
+    message: message ?? `Handing off from ${fromAgent} to ${toAgent}.`,
+    to:      toAgent,
+    payload: { from: fromAgent, to: toAgent },
+  });
+  await delay(600);
+}
+
+// ─── Demo data builders ───────────────────────────────────────────────────────
+
+/**
+ * Truncate a topic string for use inside source titles.
+ */
+function shortTopic(topic) {
+  return topic.length > 45 ? `${topic.substring(0, 45)}…` : topic;
+}
+
+function buildInitialSources(topic, nextSrcId) {
+  const t = shortTopic(topic);
+  return [
+    {
+      id:         nextSrcId(),
+      title:      `[DEMO] Systematic Review: ${t}`,
+      authors:    ['Demo, A.', 'Research, B.'],
+      year:       2024,
+      url:        'https://demo.example.com/source-1',
+      sourceType: 'journal',
+      relevance:  'high',
+      demo:       true,
+    },
+    {
+      id:         nextSrcId(),
+      title:      `[DEMO] Empirical Study on Emerging Trends in ${t}`,
+      authors:    ['Demo, C.', 'Study, D.'],
+      year:       2023,
+      url:        'https://demo.example.com/source-2',
+      sourceType: 'conference',
+      relevance:  'high',
+      demo:       true,
+    },
+    {
+      id:         nextSrcId(),
+      title:      `[DEMO] Technical Analysis and Future Directions: ${t}`,
+      authors:    ['Demo, E.'],
+      year:       2024,
+      url:        'https://demo.example.com/source-3',
+      sourceType: 'preprint',
+      relevance:  'medium',
+      demo:       true,
+    },
+  ];
+}
+
+function buildSupplementarySource(topic, nextSrcId) {
+  const t = shortTopic(topic);
+  return {
+    id:         nextSrcId(),
+    title:      `[DEMO] Supplementary Evidence: Key Claims in ${t}`,
+    authors:    ['Demo, F.', 'Evidence, G.'],
+    year:       2025,
+    url:        'https://demo.example.com/source-4',
+    sourceType: 'journal',
+    relevance:  'high',
+    demo:       true,
+  };
+}
+
+function buildClaims(topic, sourceIds, nextClmId) {
+  return [
+    {
+      id:        nextClmId(),
+      text:      `[DEMO] The primary domain of "${topic}" has demonstrated measurable impact across recent literature.`,
+      status:    'pending',
+      sourceIds: [sourceIds[0]],
+    },
+    {
+      id:        nextClmId(),
+      text:      `[DEMO] Existing methodologies show significant variation in outcomes related to "${topic}".`,
+      status:    'pending',
+      sourceIds: [sourceIds[1]],
+    },
+    {
+      id:        nextClmId(),
+      text:      `[DEMO] Current research gaps indicate opportunities for further investigation into "${topic}".`,
+      status:    'pending',
+      sourceIds: [sourceIds[0], sourceIds[2] ?? sourceIds[1]],
+    },
+  ];
+}
+
+function buildPaper(topic, sources, claims, isRevised) {
+  const refs = sources.map((s, i) =>
+    `[DEMO Ref ${i + 1}] ${s.authors.join(', ')} (${s.year}). "${s.title}". Demo Source.`
+  );
+
+  return {
+    title:        `[DEMO] ${topic}: A Systematic Analysis`,
+    abstract:
+      `[DEMO PAPER] This paper presents a systematic analysis of "${topic}". ` +
+      `Conducted by the Science Bots autonomous agent system in demo mode. ` +
+      `All sources and findings are clearly marked as demo data. ` +
+      (isRevised
+        ? 'This is the revised version incorporating reviewer feedback.'
+        : 'This is the initial draft pending final review.'),
+    introduction:
+      `[DEMO] The field of "${topic}" has attracted significant scholarly attention. ` +
+      `This research synthesises available demo evidence to provide a structured overview of key ` +
+      `findings, methodologies, and future directions. ` +
+      `NOTE: All content is generated by the Science Bots demo engine and does not represent real research.`,
+    findings: [
+      {
+        heading: '[DEMO] Finding 1: Core Trends',
+        content:
+          `Analysis of demo sources indicates a consistent pattern of development in "${topic}". ` +
+          `[DEMO Source 1] provides foundational evidence supporting this observation.`,
+      },
+      {
+        heading: '[DEMO] Finding 2: Methodological Approaches',
+        content:
+          `Multiple demo sources document varied methodological approaches. ` +
+          `[DEMO Source 2] highlights empirical results that align with theoretical frameworks.`,
+      },
+      {
+        heading: isRevised
+          ? '[DEMO] Finding 3: Expanded Evidence (Revised)'
+          : '[DEMO] Finding 3: Research Gaps',
+        content: isRevised
+          ? `Following reviewer feedback, this section has been strengthened with explicit reference ` +
+            `to [DEMO Source 4], which directly supports the key claim regarding research gaps.`
+          : `Current demo evidence identifies key research gaps warranting further exploration.`,
+      },
+    ],
+    analysis:
+      `[DEMO] The convergence of evidence from ${sources.length} demo sources supports the conclusion ` +
+      `that "${topic}" is an actively evolving field with significant implications. ` +
+      (isRevised
+        ? 'Reviewer feedback has been incorporated to strengthen all key claims.'
+        : 'Initial analysis subject to revision based on reviewer feedback.'),
+    conclusion:
+      `[DEMO] This systematic analysis demonstrates the Science Bots autonomous research workflow. ` +
+      `In production, content would be generated by real AI agents using verified academic sources. ` +
+      `The agentic pipeline — Orchestrator → Researcher → Analyzer → Writer → Reviewer — ` +
+      `has been demonstrated end-to-end for the topic: "${topic}".`,
+    references: refs,
+    claims:     claims,
+    metadata: {
+      generatedAt:  new Date().toISOString(),
+      agentSystem:  'Science Bots v1.0 (Demo Mode)',
+      topic,
+      sourceCount:  sources.length,
+      claimCount:   claims.filter((c) => c.status === 'supported').length,
+      isRevised,
+      demo:         true,
+    },
+  };
+}
+
+// ─── Main workflow ────────────────────────────────────────────────────────────
+
+async function runWorkflow(researchId, topic) {
+  const nextSrcId = makeIdGen('src');
+  const nextClmId = makeIdGen('clm');
+
+  // Mark session as running
+  updateResearch(researchId, { status: RESEARCH_STATUS.RUNNING });
+
+  // ══════════════════════════════════════════════════════════════════════
+  // STEP 1 — ORCHESTRATOR: plan and route to researcher
+  // ══════════════════════════════════════════════════════════════════════
+  await delay(800);
+  await agentUpdate(researchId, AGENT_IDS.ORCHESTRATOR, AGENT_STATES.WORKING,
+    'planning', 'Planning the research workflow...');
+  await delay(1400);
+
+  await agentUpdate(researchId, AGENT_IDS.ORCHESTRATOR, AGENT_STATES.WORKING,
+    'routing', 'Routing to Researcher agent to begin evidence gathering.');
+  await delay(800);
+
+  await handoff(researchId, AGENT_IDS.ORCHESTRATOR, AGENT_IDS.RESEARCHER,
+    'Orchestrator → Researcher: Begin initial evidence search.');
+
+  // ══════════════════════════════════════════════════════════════════════
+  // STEP 2 — RESEARCHER: first pass (3 sources)
+  // ══════════════════════════════════════════════════════════════════════
+  await agentUpdate(researchId, AGENT_IDS.RESEARCHER, AGENT_STATES.WORKING,
+    'searching', 'Searching academic sources...');
+  await delay(1500);
+
+  await agentUpdate(researchId, AGENT_IDS.RESEARCHER, AGENT_STATES.TOOL_CALLING,
+    'fetching', 'Retrieving source metadata...');
+  await delay(1000);
+
+  const initialSources = buildInitialSources(topic, nextSrcId);
+  for (const source of initialSources) {
+    addSource(researchId, source);
+    fire(researchId, {
+      type:    EVENT_TYPES.SOURCE_FOUND,
+      agent:   AGENT_IDS.RESEARCHER,
+      status:  AGENT_STATES.WORKING,
+      action:  'source_found',
+      message: `Found source: "${source.title}"`,
+      payload: source,
+    });
+    await delay(700);
+  }
+
+  await agentUpdate(researchId, AGENT_IDS.RESEARCHER, AGENT_STATES.COMPLETED,
+    'search_complete',
+    `Initial search complete. Found ${initialSources.length} demo sources.`);
+  await delay(700);
+
+  await handoff(researchId, AGENT_IDS.RESEARCHER, AGENT_IDS.ANALYZER,
+    'Researcher → Analyzer: Initial sources ready for evaluation.');
+
+  // ══════════════════════════════════════════════════════════════════════
+  // STEP 3 — ANALYZER: first pass → insufficient evidence (feedback loop)
+  // ══════════════════════════════════════════════════════════════════════
+  await agentUpdate(researchId, AGENT_IDS.ANALYZER, AGENT_STATES.VERIFYING,
+    'evaluating_evidence', 'Evaluating evidence and checking claims...');
+  await delay(1500);
+
+  await agentUpdate(researchId, AGENT_IDS.ANALYZER, AGENT_STATES.VERIFYING,
+    'cross_referencing', 'Cross-referencing sources for consistency...');
+  await delay(1200);
+
+  // Intentional feedback loop #1 — insufficient evidence
+  fire(researchId, {
+    type:    EVENT_TYPES.INSUFFICIENT_EVIDENCE,
+    agent:   AGENT_IDS.ANALYZER,
+    status:  AGENT_STATES.VERIFYING,
+    action:  'insufficient_evidence',
+    message: 'Additional evidence is required for one key claim.',
+    payload: {
+      claim: 'Research gap analysis (Finding 3) requires a stronger supporting source.',
+    },
+  });
+  await delay(1000);
+
+  // Orchestrator re-routes
+  await agentUpdate(researchId, AGENT_IDS.ORCHESTRATOR, AGENT_STATES.WORKING,
+    'rerouting',
+    'Orchestrator: Insufficient evidence detected — rerouting to Researcher for additional search.');
+  await delay(700);
+
+  await handoff(researchId, AGENT_IDS.ANALYZER, AGENT_IDS.RESEARCHER,
+    'Analyzer → Researcher: Please expand the search with supplementary evidence.');
+
+  // ══════════════════════════════════════════════════════════════════════
+  // STEP 4 — RESEARCHER: second pass (1 supplementary source)
+  // ══════════════════════════════════════════════════════════════════════
+  await agentUpdate(researchId, AGENT_IDS.RESEARCHER, AGENT_STATES.WORKING,
+    'searching', 'Searching for additional supporting evidence...');
+  await delay(1400);
+
+  const suppSource = buildSupplementarySource(topic, nextSrcId);
+  addSource(researchId, suppSource);
+  fire(researchId, {
+    type:    EVENT_TYPES.SOURCE_FOUND,
+    agent:   AGENT_IDS.RESEARCHER,
+    status:  AGENT_STATES.WORKING,
+    action:  'source_found',
+    message: `Found supplementary source: "${suppSource.title}"`,
+    payload: suppSource,
+  });
+  await delay(700);
+
+  await agentUpdate(researchId, AGENT_IDS.RESEARCHER, AGENT_STATES.COMPLETED,
+    'search_complete', 'Supplementary search complete. Additional source located.');
+  await delay(700);
+
+  await handoff(researchId, AGENT_IDS.RESEARCHER, AGENT_IDS.ANALYZER,
+    'Researcher → Analyzer: Expanded source set ready for re-evaluation.');
+
+  // ══════════════════════════════════════════════════════════════════════
+  // STEP 5 — ANALYZER: second pass → claims verified
+  // ══════════════════════════════════════════════════════════════════════
+  await agentUpdate(researchId, AGENT_IDS.ANALYZER, AGENT_STATES.VERIFYING,
+    'validating', 'Validating the expanded evidence set...');
+  await delay(1400);
+
+  await agentUpdate(researchId, AGENT_IDS.ANALYZER, AGENT_STATES.VERIFYING,
+    'building_claims', 'Building and verifying claims from all sources...');
+  await delay(1200);
+
+  // Build claims from all 4 source IDs
+  const allSourceIds = [
+    ...initialSources.map((s) => s.id),
+    suppSource.id,
+  ];
+  const claims = buildClaims(topic, allSourceIds, nextClmId);
+
+  // Verify all 3 claims
+  for (const claim of claims) {
+    claim.status = 'supported';
+    addClaim(researchId, claim);
+    fire(researchId, {
+      type:    EVENT_TYPES.CLAIM_VERIFIED,
+      agent:   AGENT_IDS.ANALYZER,
+      status:  AGENT_STATES.VERIFYING,
+      action:  'claim_verified',
+      message: `Claim verified: "${claim.text.substring(0, 80)}…"`,
+      payload: claim,
+    });
+    await delay(700);
+  }
+
+  await agentUpdate(researchId, AGENT_IDS.ANALYZER, AGENT_STATES.COMPLETED,
+    'analysis_complete',
+    `Analysis complete. ${claims.length} claims verified. Sufficient evidence confirmed.`);
+  await delay(700);
+
+  // Orchestrator routes to writer
+  await agentUpdate(researchId, AGENT_IDS.ORCHESTRATOR, AGENT_STATES.WORKING,
+    'routing', 'Orchestrator: Evidence sufficient — routing to Writer to draft the paper.');
+  await delay(600);
+
+  await handoff(researchId, AGENT_IDS.ANALYZER, AGENT_IDS.WRITER,
+    'Analyzer → Writer: Evidence verified. Begin drafting the research paper.');
+
+  // ══════════════════════════════════════════════════════════════════════
+  // STEP 6 — WRITER: first draft
+  // ══════════════════════════════════════════════════════════════════════
+  await agentUpdate(researchId, AGENT_IDS.WRITER, AGENT_STATES.WORKING,
+    'drafting', 'Drafting the research paper from verified evidence...');
+  await delay(1800);
+
+  await agentUpdate(researchId, AGENT_IDS.WRITER, AGENT_STATES.WORKING,
+    'structuring',
+    'Structuring sections: Introduction, Findings, Analysis, Conclusion...');
+  await delay(1400);
+
+  const currentSession = getResearch(researchId);
+  const allSources     = currentSession.sources;
+  const draftPaper     = buildPaper(topic, allSources, claims, false);
+  setPaper(researchId, draftPaper);
+
+  fire(researchId, {
+    type:    EVENT_TYPES.PAPER_UPDATED,
+    agent:   AGENT_IDS.WRITER,
+    status:  AGENT_STATES.WORKING,
+    action:  'paper_updated',
+    message: 'Initial draft complete. Paper structure finalised.',
+    payload: { sections: Object.keys(draftPaper), demo: true },
+  });
+  await delay(800);
+
+  await agentUpdate(researchId, AGENT_IDS.WRITER, AGENT_STATES.COMPLETED,
+    'draft_complete', 'Initial draft complete. Forwarding to Reviewer.');
+  await delay(700);
+
+  await handoff(researchId, AGENT_IDS.WRITER, AGENT_IDS.REVIEWER,
+    'Writer → Reviewer: Initial draft ready for review.');
+
+  // ══════════════════════════════════════════════════════════════════════
+  // STEP 7 — REVIEWER: first pass → revision required (feedback loop)
+  // ══════════════════════════════════════════════════════════════════════
+  await agentUpdate(researchId, AGENT_IDS.REVIEWER, AGENT_STATES.VERIFYING,
+    'reviewing', 'Reviewing claims, citations, and consistency...');
+  await delay(1400);
+
+  await agentUpdate(researchId, AGENT_IDS.REVIEWER, AGENT_STATES.VERIFYING,
+    'checking_citations', 'Checking citation coverage and claim support...');
+  await delay(1200);
+
+  // Intentional feedback loop #2 — revision required
+  fire(researchId, {
+    type:    EVENT_TYPES.REVISION_REQUIRED,
+    agent:   AGENT_IDS.REVIEWER,
+    status:  AGENT_STATES.VERIFYING,
+    action:  'revision_required',
+    message: 'One claim requires clearer supporting evidence.',
+    payload: {
+      issue:    'Finding 3 needs an explicit reference to the supplementary source.',
+      severity: 'minor',
+    },
+  });
+  await delay(1000);
+
+  // Orchestrator re-routes
+  await agentUpdate(researchId, AGENT_IDS.ORCHESTRATOR, AGENT_STATES.WORKING,
+    'rerouting',
+    'Orchestrator: Revision required — rerouting to Writer for targeted revision.');
+  await delay(600);
+
+  await handoff(researchId, AGENT_IDS.REVIEWER, AGENT_IDS.WRITER,
+    'Reviewer → Writer: Please strengthen Finding 3 with explicit supplementary reference.');
+
+  // ══════════════════════════════════════════════════════════════════════
+  // STEP 8 — WRITER: revision
+  // ══════════════════════════════════════════════════════════════════════
+  await agentUpdate(researchId, AGENT_IDS.WRITER, AGENT_STATES.WORKING,
+    'revising', 'Revising the paper based on reviewer feedback...');
+  await delay(1400);
+
+  await agentUpdate(researchId, AGENT_IDS.WRITER, AGENT_STATES.WORKING,
+    'incorporating_feedback', 'Incorporating reviewer feedback into Finding 3...');
+  await delay(1200);
+
+  const revisedPaper = buildPaper(topic, allSources, claims, true);
+  setPaper(researchId, revisedPaper);
+
+  fire(researchId, {
+    type:    EVENT_TYPES.PAPER_UPDATED,
+    agent:   AGENT_IDS.WRITER,
+    status:  AGENT_STATES.WORKING,
+    action:  'paper_updated',
+    message: 'Paper revised. Finding 3 strengthened with supplementary evidence.',
+    payload: { revisedSection: 'findings[2]', demo: true },
+  });
+  await delay(800);
+
+  await agentUpdate(researchId, AGENT_IDS.WRITER, AGENT_STATES.COMPLETED,
+    'revision_complete', 'Revision complete. Returning to Reviewer for final approval.');
+  await delay(700);
+
+  await handoff(researchId, AGENT_IDS.WRITER, AGENT_IDS.REVIEWER,
+    'Writer → Reviewer: Revised paper ready for final review.');
+
+  // ══════════════════════════════════════════════════════════════════════
+  // STEP 9 — REVIEWER: final pass → approved
+  // ══════════════════════════════════════════════════════════════════════
+  await agentUpdate(researchId, AGENT_IDS.REVIEWER, AGENT_STATES.VERIFYING,
+    'final_review', 'Performing final verification...');
+  await delay(1400);
+
+  // Final claim verifications (2 of 3 re-confirmed)
+  for (const claim of claims.slice(0, 2)) {
+    fire(researchId, {
+      type:    EVENT_TYPES.CLAIM_VERIFIED,
+      agent:   AGENT_IDS.REVIEWER,
+      status:  AGENT_STATES.VERIFYING,
+      action:  'final_claim_verified',
+      message: `Final verification passed: "${claim.text.substring(0, 80)}…"`,
+      payload: { claimId: claim.id, verifiedBy: AGENT_IDS.REVIEWER },
+    });
+    await delay(600);
+  }
+
+  await agentUpdate(researchId, AGENT_IDS.REVIEWER, AGENT_STATES.COMPLETED,
+    'approved', 'Research paper approved. All claims verified and citations consistent.');
+  await delay(700);
+
+  // Orchestrator closes the loop
+  await agentUpdate(researchId, AGENT_IDS.ORCHESTRATOR, AGENT_STATES.COMPLETED,
+    'workflow_complete', 'Research workflow complete. Paper approved and ready.');
+  await delay(600);
+
+  // Mark session completed
+  updateResearch(researchId, {
+    status:       RESEARCH_STATUS.COMPLETED,
+    currentAgent: null,
+  });
+
+  // paper_completed — final event
+  fire(researchId, {
+    type:    EVENT_TYPES.PAPER_COMPLETED,
+    agent:   AGENT_IDS.REVIEWER,
+    status:  AGENT_STATES.COMPLETED,
+    action:  'paper_completed',
+    message: 'Research paper is complete and ready for viewing.',
+    to:      null,
+    payload: {
+      researchId,
+      topic,
+      sourceCount: allSources.length,
+      claimCount:  claims.length,
+      status:      'completed',
+      demo:        true,
+    },
+  });
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+/**
+ * Start the deterministic demo research workflow asynchronously.
+ * Fire-and-forget — does NOT block the HTTP response.
+ *
+ * @param {string} researchId
+ */
+export function startDemoResearch(researchId) {
+  const session = getResearch(researchId);
+  if (!session) {
+    console.warn(`[AgentEngine] Session ${researchId} not found — aborting.`);
+    return;
+  }
+
+  // Intentionally NOT awaited — runs in the background
+  runWorkflow(researchId, session.topic).catch((err) => {
+    console.error(`[AgentEngine] Unhandled error in session ${researchId}:`, err.message);
+    try {
+      updateResearch(researchId, { status: RESEARCH_STATUS.ERROR });
+      const event = createEvent({
+        type:    EVENT_TYPES.ERROR,
+        agent:   AGENT_IDS.ORCHESTRATOR,
+        status:  AGENT_STATES.ERROR,
+        action:  'engine_error',
+        message: 'An internal error occurred in the agent engine.',
+        payload: { error: err.message },
+      });
+      appendEvent(researchId, event);
+      emit(researchId, event);
+    } catch {
+      // last-resort guard — never crash the Express server
+    }
+  });
+}

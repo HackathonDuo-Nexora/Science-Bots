@@ -2,7 +2,7 @@
  * researchController.js
  *
  * HTTP handlers for all research-related routes.
- * Delegates to researchService and eventService.
+ * Delegates to researchService, eventService, and agentEngine.
  */
 
 import {
@@ -19,6 +19,8 @@ import {
   unsubscribe,
   EVENT_TYPES,
 } from '../services/eventService.js';
+
+import { startDemoResearch } from '../services/agentEngine.js';
 
 // ─── POST /api/research ───────────────────────────────────────────────────────
 
@@ -51,6 +53,10 @@ export async function startResearch(req, res) {
   appendEvent(session.id, event);
   // Emit to any already-connected SSE clients (none yet, but correct pattern)
   emit(session.id, event);
+
+  // Fire-and-forget — starts the demo agent workflow asynchronously.
+  // The HTTP response is returned immediately; events arrive via SSE.
+  startDemoResearch(session.id);
 
   return res.status(201).json({
     success:    true,
