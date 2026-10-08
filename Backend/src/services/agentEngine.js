@@ -1,17 +1,21 @@
 /**
  * agentEngine.js
  *
- * Deterministic demo agent engine for Science Bots.
+ * Agentic research engine for Science Bots.
  *
- * Simulates the full autonomous research pipeline:
+ * Pipeline:
  *   Orchestrator → Researcher → Analyzer → Researcher → Analyzer
  *                → Writer → Reviewer → Writer → Reviewer → DONE
  *
- * DEMO MODE — no real AI or external APIs.
- * All sources, claims, and paper content are clearly marked demo data.
- * Replace with real AI integration in Phase 3 without changing the event contract.
+ * Source retrieval is delegated to researchProvider, which selects the
+ * implementation based on the RESEARCH_MODE environment variable:
+ *   demo  — deterministic demo data (default)
+ *   real  — real research APIs (Phase 4)
  *
- * Target runtime: 30–50 seconds.
+ * The external event contract (SSE schema, agent IDs, event types) is
+ * unchanged regardless of provider.
+ *
+ * Target runtime in demo mode: 30–50 seconds.
  */
 
 import {
@@ -33,16 +37,11 @@ import {
   RESEARCH_STATUS,
 } from './researchService.js';
 
+import { search as providerSearch } from './research/researchProvider.js';
+
 // ─── Utility ──────────────────────────────────────────────────────────────────
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// Monotonic counters — scoped per-call in buildDemoSources so parallel
-// sessions each get consistent IDs tied to their own timestamps.
-function makeIdGen(prefix) {
-  let n = 0;
-  return () => `${prefix}_${++n}_${Date.now()}`;
-}
 
 /**
  * Emit a canonical event AND persist it to the session event log.
@@ -87,64 +86,7 @@ async function handoff(researchId, fromAgent, toAgent, message) {
   await delay(600);
 }
 
-// ─── Demo data builders ───────────────────────────────────────────────────────
-
-/**
- * Truncate a topic string for use inside source titles.
- */
-function shortTopic(topic) {
-  return topic.length > 45 ? `${topic.substring(0, 45)}…` : topic;
-}
-
-function buildInitialSources(topic, nextSrcId) {
-  const t = shortTopic(topic);
-  return [
-    {
-      id:         nextSrcId(),
-      title:      `[DEMO] Systematic Review: ${t}`,
-      authors:    ['Demo, A.', 'Research, B.'],
-      year:       2024,
-      url:        'https://demo.example.com/source-1',
-      sourceType: 'journal',
-      relevance:  'high',
-      demo:       true,
-    },
-    {
-      id:         nextSrcId(),
-      title:      `[DEMO] Empirical Study on Emerging Trends in ${t}`,
-      authors:    ['Demo, C.', 'Study, D.'],
-      year:       2023,
-      url:        'https://demo.example.com/source-2',
-      sourceType: 'conference',
-      relevance:  'high',
-      demo:       true,
-    },
-    {
-      id:         nextSrcId(),
-      title:      `[DEMO] Technical Analysis and Future Directions: ${t}`,
-      authors:    ['Demo, E.'],
-      year:       2024,
-      url:        'https://demo.example.com/source-3',
-      sourceType: 'preprint',
-      relevance:  'medium',
-      demo:       true,
-    },
-  ];
-}
-
-function buildSupplementarySource(topic, nextSrcId) {
-  const t = shortTopic(topic);
-  return {
-    id:         nextSrcId(),
-    title:      `[DEMO] Supplementary Evidence: Key Claims in ${t}`,
-    authors:    ['Demo, F.', 'Evidence, G.'],
-    year:       2025,
-    url:        'https://demo.example.com/source-4',
-    sourceType: 'journal',
-    relevance:  'high',
-    demo:       true,
-  };
-}
+// ─── Paper builder (engine-level — not provider concern) ─────────────────────
 
 function buildClaims(topic, sourceIds, nextClmId) {
   return [
@@ -236,11 +178,16 @@ function buildPaper(topic, sources, claims, isRevised) {
   };
 }
 
+// ─── Claim builder (analyzer-level — not provider concern) ───────────────────
+
+function makeClaimId() {
+  return `clm_${crypto.randomUUID().replace(/-/g, '')}`;
+}
+
 // ─── Main workflow ────────────────────────────────────────────────────────────
 
 async function runWorkflow(researchId, topic) {
-  const nextSrcId = makeIdGen('src');
-  const nextClmId = makeIdGen('clm');
+  const nextClmId = makeClaimId;
 
   // Mark session as running
   updateResearch(researchId, { status: RESEARCH_STATUS.RUNNING });
@@ -271,7 +218,13 @@ async function runWorkflow(researchId, topic) {
     'fetching', 'Retrieving source metadata...');
   await delay(1000);
 
-  const initialSources = buildInitialSources(topic, nextSrcId);
+  // Delegate to the configured research provider (demo or real)
+  const { sources: initialSources } = await providerSearch({
+    topic,
+    existingSources: [],
+    pass: 'initial',
+  });
+
   for (const source of initialSources) {
     addSource(researchId, source);
     fire(researchId, {
@@ -333,17 +286,29 @@ async function runWorkflow(researchId, topic) {
     'searching', 'Searching for additional supporting evidence...');
   await delay(1400);
 
-  const suppSource = buildSupplementarySource(topic, nextSrcId);
-  addSource(researchId, suppSource);
-  fire(researchId, {
-    type:    EVENT_TYPES.SOURCE_FOUND,
-    agent:   AGENT_IDS.RESEARCHER,
-    status:  AGENT_STATES.WORKING,
-    action:  'source_found',
-    message: `Found supplementary source: "${suppSource.title}"`,
-    payload: suppSource,
+  // Delegate supplementary search to provider
+  const currentSourcesSnap = getResearch(researchId)?.sources ?? [];
+  const { sources: suppSources } = await providerSearch({
+    topic,
+    existingSources: currentSourcesSnap,
+    pass: 'supplementary',
   });
-  await delay(700);
+
+  for (const suppSource of suppSources) {
+    addSource(researchId, suppSource);
+    fire(researchId, {
+      type:    EVENT_TYPES.SOURCE_FOUND,
+      agent:   AGENT_IDS.RESEARCHER,
+      status:  AGENT_STATES.WORKING,
+      action:  'source_found',
+      message: `Found supplementary source: "${suppSource.title}"`,
+      payload: suppSource,
+    });
+    await delay(700);
+  }
+
+  // Use the first supplementary source for claim building (backward-compat)
+  const suppSource = suppSources[0];
 
   await agentUpdate(researchId, AGENT_IDS.RESEARCHER, AGENT_STATES.COMPLETED,
     'search_complete', 'Supplementary search complete. Additional source located.');
@@ -363,11 +328,9 @@ async function runWorkflow(researchId, topic) {
     'building_claims', 'Building and verifying claims from all sources...');
   await delay(1200);
 
-  // Build claims from all 4 source IDs
-  const allSourceIds = [
-    ...initialSources.map((s) => s.id),
-    suppSource.id,
-  ];
+  // Build claims from all collected source IDs
+  const allCollectedSources = getResearch(researchId)?.sources ?? [];
+  const allSourceIds = allCollectedSources.map((s) => s.id);
   const claims = buildClaims(topic, allSourceIds, nextClmId);
 
   // Verify all 3 claims
