@@ -1,144 +1,302 @@
 // ============================================================
-// LaunchScreen — lightweight initial Science Bots presentation
-// Displayed on cold open before the user enters the laboratory.
+// LaunchScreen — Autonomous AI Research Laboratory Experience
+// Cinematic, futuristic, high-end laboratory interface
 // ============================================================
+
+import { useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import {
+  Compass,
+  Search,
+  ShieldCheck,
+  FileText,
+  CheckCircle,
+  ArrowRight,
+  Cpu,
+  Layers,
+  Sparkles,
+  Terminal,
+} from 'lucide-react'
+import { ResearchCoreCanvas } from './ResearchCoreCanvas'
 
 interface LaunchScreenProps {
   onLaunch: () => void
 }
 
-const AGENTS = [
-  { name: 'ORCHESTRATOR', role: 'Workflow Coordinator', color: '#8884D8' },
-  { name: 'RESEARCHER',   role: 'Scholarly Evidence Search', color: '#2F5BFF' },
-  { name: 'ANALYZER',     role: 'Evidence Verification', color: '#22A06B' },
-  { name: 'WRITER',       role: 'Paper Synthesis', color: '#E8A317' },
-  { name: 'REVIEWER',     role: 'Critique & Quality Control', color: '#D84B88' },
+interface AgentNode {
+  id: string
+  name: string
+  role: string
+  subrole: string
+  color: string
+  glowColor: string
+  icon: typeof Search
+  status: string
+  position: {
+    desktop: { top?: string; bottom?: string; left?: string; right?: string }
+  }
+}
+
+const AGENTS: AgentNode[] = [
+  {
+    id: 'orchestrator',
+    name: 'ORCHESTRATOR',
+    role: 'Workflow Director',
+    subrole: 'Feedback Loop Routing',
+    color: '#818CF8',
+    glowColor: 'rgba(129, 140, 248, 0.25)',
+    icon: Compass,
+    status: 'ACTIVE',
+    position: {
+      desktop: { top: '16%', left: '12%' },
+    },
+  },
+  {
+    id: 'researcher',
+    name: 'RESEARCHER',
+    role: 'Scholarly Discovery',
+    subrole: 'OpenAlex Knowledge Base',
+    color: '#38BDF8',
+    glowColor: 'rgba(56, 189, 248, 0.25)',
+    icon: Search,
+    status: 'ONLINE',
+    position: {
+      desktop: { top: '16%', right: '12%' },
+    },
+  },
+  {
+    id: 'analyzer',
+    name: 'ANALYZER',
+    role: 'Evidence Verification',
+    subrole: 'Gemini AI Fact-Checking',
+    color: '#34D399',
+    glowColor: 'rgba(52, 211, 153, 0.25)',
+    icon: ShieldCheck,
+    status: 'STANDBY',
+    position: {
+      desktop: { top: '48%', left: '8%' },
+    },
+  },
+  {
+    id: 'writer',
+    name: 'WRITER',
+    role: 'Paper Synthesis',
+    subrole: 'Iterative Section Drafting',
+    color: '#FBBF24',
+    glowColor: 'rgba(251, 191, 36, 0.25)',
+    icon: FileText,
+    status: 'READY',
+    position: {
+      desktop: { bottom: '16%', left: '15%' },
+    },
+  },
+  {
+    id: 'reviewer',
+    name: 'REVIEWER',
+    role: 'Critique & Audit',
+    subrole: 'Citation Consistency Check',
+    color: '#F472B6',
+    glowColor: 'rgba(244, 114, 182, 0.25)',
+    icon: CheckCircle,
+    status: 'STANDBY',
+    position: {
+      desktop: { bottom: '16%', right: '15%' },
+    },
+  },
 ]
 
 export function LaunchScreen({ onLaunch }: LaunchScreenProps) {
+  const [isActivating, setIsActivating] = useState(false)
+
+  const handleInitialize = () => {
+    if (isActivating) return
+    setIsActivating(true)
+    // Smooth cinematic transition timing
+    setTimeout(() => {
+      onLaunch()
+    }, 650)
+  }
+
   return (
-    <div className="launch-overlay">
-      <div className="launch-card">
-        {/* Brand mark */}
-        <div style={{
-          width: 52,
-          height: 52,
-          borderRadius: 14,
-          background: '#14161A',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          margin: '0 auto 18px',
-          boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
-        }}>
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-            <circle cx="12" cy="12" r="3.5" fill="#CFE0FF" />
-            <line x1="12" y1="2" x2="12" y2="6.5" stroke="#CFE0FF" strokeWidth="2" strokeLinecap="round" />
-            <line x1="12" y1="17.5" x2="12" y2="22" stroke="#CFE0FF" strokeWidth="2" strokeLinecap="round" />
-            <line x1="2" y1="12" x2="6.5" y2="12" stroke="#D9F2E6" strokeWidth="2" strokeLinecap="round" />
-            <line x1="17.5" y1="12" x2="22" y2="12" stroke="#D9F2E6" strokeWidth="2" strokeLinecap="round" />
-            <line x1="4.93" y1="4.93" x2="8.1" y2="8.1" stroke="#FFE7C2" strokeWidth="1.5" strokeLinecap="round" />
-            <line x1="15.9" y1="15.9" x2="19.07" y2="19.07" stroke="#FFE7C2" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
+    <AnimatePresence>
+      <motion.div
+        className="launch-universe"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0, scale: 1.04, filter: 'blur(8px)' }}
+        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+      >
+        {/* Background Grid & Ambient Glows */}
+        <div className="launch-bg-grid" />
+        <div className="launch-glow-cyan" />
+        <div className="launch-glow-violet" />
+
+        {/* 3D Holographic Research Core */}
+        <ResearchCoreCanvas />
+
+        {/* Dynamic Connection Pulse SVG Overlay (Desktop) */}
+        <svg className="launch-connections" aria-hidden="true">
+          <defs>
+            <linearGradient id="cyanLineGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#38BDF8" stopOpacity="0.6" />
+              <stop offset="100%" stopColor="#818CF8" stopOpacity="0.1" />
+            </linearGradient>
+            <linearGradient id="violetLineGrad" x1="100%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#818CF8" stopOpacity="0.6" />
+              <stop offset="100%" stopColor="#34D399" stopOpacity="0.1" />
+            </linearGradient>
+          </defs>
+
+          {/* Radial telemetry guides */}
+          <circle cx="50%" cy="50%" r="220" fill="none" stroke="rgba(56, 189, 248, 0.08)" strokeDasharray="3 6" />
+          <circle cx="50%" cy="50%" r="340" fill="none" stroke="rgba(129, 140, 248, 0.06)" strokeDasharray="4 8" />
+
+          {/* Ray lines to agent stations */}
+          <line x1="50%" y1="50%" x2="22%" y2="24%" stroke="url(#cyanLineGrad)" strokeWidth="1" strokeDasharray="6 6" className="pulse-line" />
+          <line x1="50%" y1="50%" x2="78%" y2="24%" stroke="url(#cyanLineGrad)" strokeWidth="1" strokeDasharray="6 6" className="pulse-line" />
+          <line x1="50%" y1="50%" x2="18%" y2="52%" stroke="url(#violetLineGrad)" strokeWidth="1" strokeDasharray="6 6" className="pulse-line" />
+          <line x1="50%" y1="50%" x2="25%" y2="80%" stroke="url(#violetLineGrad)" strokeWidth="1" strokeDasharray="6 6" className="pulse-line" />
+          <line x1="50%" y1="50%" x2="75%" y2="80%" stroke="url(#cyanLineGrad)" strokeWidth="1" strokeDasharray="6 6" className="pulse-line" />
+        </svg>
+
+        {/* Top Laboratory Telemetry Header */}
+        <header className="launch-header">
+          <div className="launch-header-left">
+            <span className="launch-status-pill">
+              <span className="launch-live-dot" />
+              SYSTEM STATUS : ONLINE
+            </span>
+            <span className="launch-meta-tag">
+              <Terminal size={11} className="inline mr-1 opacity-70" />
+              PROTOCOL v2.4
+            </span>
+          </div>
+
+          <div className="launch-header-right">
+            <span className="launch-meta-tag">
+              <Cpu size={11} className="inline mr-1 opacity-70" />
+              5 AUTONOMOUS MODULES
+            </span>
+            <span className="launch-meta-tag">
+              <Sparkles size={11} className="inline mr-1 opacity-70" />
+              EVIDENCE-FIRST PIPELINE
+            </span>
+          </div>
+        </header>
+
+        {/* Floating Autonomous Agent Nodes (Surrounding the Core) */}
+        <div className="launch-agent-layer">
+          {AGENTS.map((agent, i) => {
+            const Icon = agent.icon
+            return (
+              <motion.div
+                key={agent.id}
+                className={`launch-agent-card agent-${agent.id}`}
+                style={{
+                  ...agent.position.desktop,
+                  borderColor: `rgba(${agent.id === 'orchestrator' ? '129, 140, 248' : agent.id === 'researcher' ? '56, 189, 248' : agent.id === 'analyzer' ? '52, 211, 153' : agent.id === 'writer' ? '251, 191, 36' : '244, 114, 182'}, 0.28)`,
+                  boxShadow: `0 8px 32px -4px rgba(0, 0, 0, 0.45), 0 0 20px ${agent.glowColor}`,
+                }}
+                initial={{ opacity: 0, y: 14, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.7, delay: 0.4 + i * 0.12, ease: [0.16, 1, 0.3, 1] }}
+                whileHover={{ y: -4, scale: 1.03 }}
+              >
+                <div className="agent-card-top">
+                  <div className="agent-icon-badge" style={{ background: `${agent.color}15`, color: agent.color }}>
+                    <Icon size={14} />
+                  </div>
+                  <div className="agent-status-tag" style={{ color: agent.color }}>
+                    <span className="agent-dot" style={{ background: agent.color }} />
+                    {agent.status}
+                  </div>
+                </div>
+
+                <div className="agent-name">{agent.name}</div>
+                <div className="agent-role">{agent.role}</div>
+                <div className="agent-subrole">{agent.subrole}</div>
+              </motion.div>
+            )
+          })}
         </div>
 
-        {/* Title & Subtitle */}
-        <div style={{
-          fontFamily: 'var(--font-mono)',
-          fontWeight: 700,
-          fontSize: 18,
-          letterSpacing: '0.12em',
-          color: '#14161A',
-          marginBottom: 4,
-        }}>
-          SCIENCE BOTS
-        </div>
-
-        <div style={{
-          fontFamily: 'var(--font-sans)',
-          fontSize: 13,
-          fontWeight: 500,
-          color: 'var(--text-muted)',
-          letterSpacing: '0.04em',
-          marginBottom: 16,
-        }}>
-          Autonomous Research Laboratory
-        </div>
-
-        {/* Short description */}
-        <p style={{
-          fontFamily: 'var(--font-sans)',
-          fontSize: 13.5,
-          color: '#4A4E57',
-          lineHeight: 1.6,
-          maxWidth: 420,
-          margin: '0 auto 24px',
-        }}>
-          An autonomous team of AI research agents that discovers, verifies, and reviews scientific evidence.
-        </p>
-
-        {/* Multi-agent visual strip */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'center',
-          gap: 6,
-          flexWrap: 'wrap',
-          marginBottom: 28,
-          padding: '10px 14px',
-          background: '#F9F7F2',
-          borderRadius: 'var(--radius-md)',
-          border: '1px solid var(--border-soft)',
-        }}>
-          {AGENTS.map((a) => (
-            <div
-              key={a.name}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-                padding: '3px 8px',
-                borderRadius: 12,
-                background: 'white',
-                border: '1px solid var(--border-soft)',
-                fontSize: 9.5,
-                fontFamily: 'var(--font-mono)',
-                fontWeight: 600,
-                color: '#2A2D35',
-                letterSpacing: '0.04em',
-              }}
+        {/* Central Hero Interface */}
+        <main className="launch-hero-center">
+          <motion.div
+            className="launch-hero-content"
+            initial={{ opacity: 0, y: 22 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+          >
+            {/* Supertitle badge */}
+            <motion.div
+              className="launch-lab-badge"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.6, delay: 0.35 }}
             >
-              <span style={{
-                width: 5,
-                height: 5,
-                borderRadius: '50%',
-                background: a.color,
-                display: 'inline-block',
-              }} />
-              {a.name}
+              <Layers size={13} className="text-cyan-400" />
+              <span>SYNCHRONIZED MULTI-AGENT INTELLIGENCE</span>
+            </motion.div>
+
+            {/* Main Brand Title */}
+            <h1 className="launch-main-title">
+              SCIENCE BOTS
+            </h1>
+
+            {/* Subtitle */}
+            <h2 className="launch-subtitle">
+              AUTONOMOUS RESEARCH LABORATORY
+            </h2>
+
+            {/* Supporting Copy */}
+            <p className="launch-description">
+              An autonomous AI research team that discovers evidence, verifies claims,
+              writes, reviews, and improves research in real time.
+            </p>
+
+            {/* System Activation CTA Button */}
+            <div className="launch-cta-container">
+              <button
+                id="launch-start-btn"
+                className={`launch-activate-btn ${isActivating ? 'is-activating' : ''}`}
+                onClick={handleInitialize}
+                disabled={isActivating}
+                aria-label="Initialize Science Bots Research Laboratory"
+              >
+                <span className="btn-glow-ring" />
+                <span className="btn-scan-line" />
+                <span className="btn-inner-content">
+                  <span className="btn-status-pip" />
+                  <span className="btn-text">
+                    {isActivating ? 'CONNECTING LABORATORY...' : 'INITIALIZE RESEARCH'}
+                  </span>
+                  <ArrowRight size={16} className="btn-arrow" />
+                </span>
+              </button>
+
+              <div className="launch-sub-cta-text">
+                Evidence-driven multi-agent research • Instant access
+              </div>
             </div>
-          ))}
-        </div>
+          </motion.div>
+        </main>
 
-        {/* Primary CTA */}
-        <button
-          id="launch-start-btn"
-          className="launch-btn"
-          onClick={onLaunch}
-        >
-          START RESEARCH
-        </button>
+        {/* Bottom Telemetry Footer */}
+        <footer className="launch-footer">
+          <div className="launch-footer-left">
+            <span>SCHOLARLY REPOSITORIES</span>
+            <span className="footer-dot">•</span>
+            <span>OPENALEX VERIFICATION</span>
+            <span className="footer-dot">•</span>
+            <span>GEMINI 3.8 REASONING</span>
+          </div>
 
-        {/* Secondary subtle text */}
-        <div style={{
-          marginTop: 14,
-          fontFamily: 'var(--font-sans)',
-          fontSize: 11,
-          color: 'var(--text-dim)',
-          letterSpacing: '0.02em',
-        }}>
-          Evidence-driven multi-agent research
-        </div>
-      </div>
-    </div>
+          <div className="launch-footer-right">
+            <span>AUTOMATED AGENT CONSENSUS PROTOCOL</span>
+          </div>
+        </footer>
+      </motion.div>
+    </AnimatePresence>
   )
 }
