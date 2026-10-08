@@ -7,6 +7,7 @@
 import { useState } from 'react'
 
 const SUGGESTIONS = [
+  'Impact of artificial intelligence on cybersecurity',
   'AI in Healthcare Diagnostics',
   'Quantum Computing Applications',
   'Climate Change Mitigation Strategies',
@@ -20,7 +21,7 @@ export function StartScreen({ onStart }: StartScreenProps) {
   const [topic, setTopic] = useState('')
 
   const handleStart = () => {
-    const t = topic.trim() || 'AI in Healthcare Diagnostics'
+    const t = topic.trim() || 'Impact of artificial intelligence on cybersecurity'
     onStart(t)
   }
 
@@ -127,7 +128,7 @@ export function StartScreen({ onStart }: StartScreenProps) {
           fontSize: 11,
           color: 'var(--text-dim)',
         }}>
-          Running in demo mode — no backend required
+          Multi-agent autonomous research pipeline
         </div>
       </div>
     </div>

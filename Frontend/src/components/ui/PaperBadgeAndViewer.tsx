@@ -4,6 +4,7 @@
 // or the FINAL PAPER READY badge.
 // ============================================================
 
+import { useState } from 'react'
 import { useScienceBotsStore } from '@/store/useScienceBotsStore'
 import type { FinalPaper } from '@/types'
 
@@ -19,6 +20,7 @@ function PaperBadge() {
       bottom: 24,
       left: '50%',
       transform: 'translateX(-50%)',
+      zIndex: 50,
     }}>
       <button
         id="paper-ready-badge"
@@ -66,42 +68,77 @@ function PaperBadge() {
 
 function Viewer({ paper }: { paper: FinalPaper }) {
   const setShowPaperViewer = useScienceBotsStore((s) => s.setShowPaperViewer)
+  const isDemo = useScienceBotsStore((s) => s.isDemo) || Boolean((paper as unknown as { metadata?: { demo?: boolean }; demo?: boolean }).metadata?.demo ?? (paper as unknown as { demo?: boolean }).demo)
+  const [copied, setCopied] = useState(false)
 
-  const handleCopy = () => {
-    const text = [
-      paper.title,
+  const buildMarkdown = () => {
+    return [
+      `# ${paper.title}`,
       '',
-      'ABSTRACT',
+      '## Abstract',
       paper.abstract,
       '',
-      'KEY FINDINGS',
+      '## Key Findings',
       ...paper.keyFindings.map((f, i) => `${i + 1}. ${f}`),
       '',
-      ...paper.sections.map((s) => `${s.title}\n${s.content}`),
-      '',
-      'SOURCES',
-      ...paper.sources.map((s, i) => `[${i + 1}] ${s.title}${s.url ? ` — ${s.url}` : ''}`),
+      ...paper.sections.map((s) => `## ${s.title}\n\n${s.content}\n`),
+      '## Sources & References',
+      ...paper.sources.map((s, i) => `[${i + 1}] ${s.title}${s.url ? ` (${s.url})` : ''}`),
     ].join('\n')
-    navigator.clipboard.writeText(text).catch(() => undefined)
+  }
+
+  const handleCopy = () => {
+    const text = buildMarkdown()
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }).catch(() => undefined)
+  }
+
+  const handleExport = () => {
+    const text = buildMarkdown()
+    const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${(paper.title || 'science_bots_paper').replace(/[^a-zA-Z0-9_-]/g, '_')}.md`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   }
 
   return (
-    <div className="paper-overlay" onClick={(e) => {
-      if (e.target === e.currentTarget) setShowPaperViewer(false)
-    }}>
-      <div className="paper-viewer">
+    <div
+      className="paper-overlay"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) setShowPaperViewer(false)
+      }}
+    >
+      <div className="paper-viewer" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="paper-viewer-header">
           <div>
             <div style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: 9,
-              fontWeight: 700,
-              color: 'var(--green)',
-              letterSpacing: '0.10em',
-              marginBottom: 3,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              marginBottom: 4,
             }}>
-              RESEARCH COMPLETE
+              <span style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9,
+                fontWeight: 700,
+                color: 'var(--green)',
+                letterSpacing: '0.10em',
+              }}>
+                RESEARCH COMPLETE
+              </span>
+              {isDemo && (
+                <span className="chip chip-demo" style={{ fontSize: 8.5, padding: '1px 6px' }}>
+                  DEMO
+                </span>
+              )}
             </div>
             <div style={{
               fontFamily: 'var(--font-sans)',
@@ -114,15 +151,29 @@ function Viewer({ paper }: { paper: FinalPaper }) {
               {paper.title}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-            <button className="paper-close-btn" onClick={handleCopy}>COPY</button>
-            <button className="paper-export-btn" onClick={handleCopy}>EXPORT</button>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
             <button
+              id="paper-copy-btn"
+              className="paper-close-btn"
+              onClick={handleCopy}
+              style={{ minWidth: 62 }}
+            >
+              {copied ? 'COPIED!' : 'COPY'}
+            </button>
+            <button
+              id="paper-export-btn"
+              className="paper-export-btn"
+              onClick={handleExport}
+            >
+              EXPORT
+            </button>
+            <button
+              id="paper-close-btn"
               className="paper-close-btn"
               onClick={() => setShowPaperViewer(false)}
-              style={{ marginLeft: 4 }}
+              style={{ fontWeight: 600 }}
             >
-              ✕
+              CLOSE
             </button>
           </div>
         </div>

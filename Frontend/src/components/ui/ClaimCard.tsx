@@ -232,6 +232,7 @@ export function ClaimCard() {
       display: 'flex',
       flexDirection: 'column',
       gap: 0,
+      zIndex: 30,
     }}>
       {/* Evidence view (expanded) */}
       {expanded && claim && (

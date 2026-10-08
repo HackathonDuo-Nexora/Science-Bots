@@ -21,7 +21,14 @@ function CameraRig() {
   useEffect(() => {
     const cam = camera as ThreeOrthoCamera
     if (!cam.isOrthographicCamera) return
-    const f = 13 // frustum height in world units
+    // Dynamically adjust frustum height based on viewport dimensions
+    // ensuring comfortable clearance on 1366x768 and compact screens
+    let f = 13.2
+    if (size.width < 1000 || size.height < 700) {
+      f = 15.0
+    } else if (size.width < 1250 || size.height < 800) {
+      f = 14.0
+    }
     const aspect = size.width / size.height
     cam.left   = (-f * aspect) / 2
     cam.right  = ( f * aspect) / 2

@@ -18,6 +18,7 @@ export function TopBranding() {
       display: 'flex',
       flexDirection: 'column',
       gap: 6,
+      zIndex: 30,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {/* Logo mark */}

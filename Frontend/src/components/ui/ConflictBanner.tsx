@@ -30,6 +30,7 @@ export function ConflictBanner() {
         bottom: 24,
         right: 20,
         width: 240,
+        zIndex: 30,
       }}>
         <div className="panel" style={{
           padding: '10px 14px',
@@ -76,6 +77,7 @@ export function ConflictBanner() {
       bottom: 24,
       right: 20,
       width: 240,
+      zIndex: 30,
     }}>
       <div className="panel" style={{
         padding: '10px 14px',

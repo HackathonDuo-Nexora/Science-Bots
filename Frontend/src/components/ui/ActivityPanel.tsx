@@ -119,6 +119,7 @@ export function ActivityPanel() {
       top: 20,
       right: 20,
       width: 248,
+      zIndex: 30,
     }}>
       <div className="panel" style={{ padding: '10px 14px' }}>
         {/* Header */}

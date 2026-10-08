@@ -190,54 +190,113 @@ body {
   border-color: var(--text-primary);
 }
 
-/* ── Paper viewer overlay ────────────────────────── */
-.paper-overlay {
+/* ── LaunchScreen ─────────────────────────────────── */
+.launch-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(30,28,24,0.55);
-  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(244, 241, 234, 0.94);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   z-index: 200;
+  padding: 20px;
+}
+.launch-card {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 40px 44px 32px;
+  width: 500px;
+  max-width: 92vw;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.12);
+  text-align: center;
+}
+.launch-btn {
+  width: 100%;
+  padding: 12px 20px;
+  background: #14161A;
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+}
+.launch-btn:hover {
+  background: #2A2D35;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+}
+.launch-btn:active {
+  transform: scale(0.985);
+}
+
+/* ── Paper viewer overlay (highest z-index hierarchy) ─ */
+.paper-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(18, 20, 24, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
+  pointer-events: auto;
 }
 .paper-viewer {
   background: white;
   border-radius: var(--radius-lg);
   width: 100%;
-  max-width: 740px;
-  max-height: 88vh;
+  max-width: 780px;
+  max-height: calc(100vh - 44px);
   display: flex;
   flex-direction: column;
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
   overflow: hidden;
+  position: relative;
+  z-index: 1010;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  pointer-events: auto;
 }
 .paper-viewer-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 24px 16px;
+  padding: 16px 24px 14px;
   border-bottom: 1px solid var(--border-soft);
   flex-shrink: 0;
+  background: white;
+  z-index: 1020;
 }
 .paper-viewer-body {
   flex: 1;
   overflow-y: auto;
-  padding: 24px;
+  padding: 22px 26px;
+  overscroll-behavior: contain;
 }
 .paper-close-btn {
   background: none;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 4px 12px;
+  padding: 5px 12px;
   cursor: pointer;
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-muted);
   letter-spacing: 0.06em;
+  transition: background 0.12s, color 0.12s;
 }
-.paper-close-btn:hover { background: #F2EFE8; }
+.paper-close-btn:hover {
+  background: #F2EFE8;
+  color: var(--text-primary);
+}
 
 .paper-export-btn {
   background: var(--text-primary);
@@ -250,6 +309,8 @@ body {
   font-weight: 700;
   color: white;
   letter-spacing: 0.06em;
-  margin-left: 8px;
+  margin-left: 4px;
+  transition: background 0.12s, transform 0.1s;
 }
 .paper-export-btn:hover { background: #2A2D35; }
+.paper-export-btn:active { transform: scale(0.98); }

@@ -36,6 +36,7 @@ export function MissionPill() {
       alignItems: 'center',
       gap: 6,
       pointerEvents: 'none',
+      zIndex: 30,
     }}>
       <div className="panel" style={{ padding: '8px 18px', display: 'flex', alignItems: 'center', gap: 10 }}>
         {/* Phase dot */}

@@ -342,37 +342,41 @@ function AgentLabel({
 }) {
   const phase      = useScienceBotsStore((s) => s.phase)
   const dot        = statusColor(state.status)
+  const showPaperViewer = useScienceBotsStore((s) => s.showPaperViewer)
   const isAlert    = state.status === 'needs_research' || state.status === 'error'
   const isComplete = state.status === 'completed'
 
-  // During the start phase, hide all Html labels so they don't
-  // overlap the StartScreen card (drei Html renders to DOM, not WebGL).
-  if (phase === 'start') return null
+  // Hide floating HTML labels during start phase or when the final paper modal is open
+  if (phase === 'start' || showPaperViewer) return null
   return (
     <Html
       position={[0, yOffset, 0]}
       center
+      zIndexRange={[10, 0]}
       style={{ pointerEvents: 'none', userSelect: 'none' }}
     >
       <div
         style={{
-          background: 'rgba(255,255,255,0.97)',
+          background: 'rgba(255,255,255,0.95)',
           border: `1px solid ${isAlert ? '#F8C0C0' : isComplete ? '#B8E8C8' : '#EAE6DC'}`,
-          borderRadius: 7,
-          padding: '5px 10px 4px',
+          borderRadius: 6,
+          padding: '4px 8px 3px',
           fontFamily: '"Geist Mono", "Courier New", monospace',
-          whiteSpace: 'nowrap',
           boxShadow: isAlert
-            ? '0 2px 14px rgba(229,72,77,0.18)'
-            : '0 2px 14px rgba(0,0,0,0.09)',
-          minWidth: 118,
+            ? '0 2px 10px rgba(229,72,77,0.18)'
+            : '0 2px 8px rgba(0,0,0,0.07)',
+          width: 122,
+          maxWidth: 122,
+          boxSizing: 'border-box',
+          backdropFilter: 'blur(4px)',
+          textAlign: 'left',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
           <span
             style={{
-              width: 7,
-              height: 7,
+              width: 6,
+              height: 6,
               borderRadius: '50%',
               background: dot,
               display: 'inline-block',
@@ -380,18 +384,22 @@ function AgentLabel({
               boxShadow: state.status !== 'idle' ? `0 0 5px ${dot}99` : 'none',
             }}
           />
-          <span style={{ fontSize: 10, fontWeight: 700, color: '#14161A', letterSpacing: '0.09em' }}>
+          <span style={{ fontSize: 9.5, fontWeight: 700, color: '#14161A', letterSpacing: '0.08em' }}>
             {agentId.toUpperCase()}
           </span>
         </div>
         <div
           style={{
-            fontSize: 9,
+            fontSize: 8.5,
             color: isAlert ? '#E5484D' : isComplete ? '#22A06B' : '#7A7F87',
-            letterSpacing: '0.04em',
-            paddingLeft: 12,
+            letterSpacing: '0.03em',
+            paddingLeft: 11,
             fontWeight: isAlert || isComplete ? 600 : 400,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
           }}
+          title={state.statusLine}
         >
           {isAlert ? '⚑ ' : ''}{state.statusLine}
         </div>
