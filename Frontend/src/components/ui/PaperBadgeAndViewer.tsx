@@ -129,7 +129,7 @@ function Viewer({ paper }: { paper: FinalPaper }) {
                 fontFamily: 'var(--font-mono)',
                 fontSize: 9,
                 fontWeight: 700,
-                color: 'var(--green)',
+                color: '#166534',
                 letterSpacing: '0.10em',
               }}>
                 RESEARCH COMPLETE
@@ -144,7 +144,7 @@ function Viewer({ paper }: { paper: FinalPaper }) {
               fontFamily: 'var(--font-sans)',
               fontSize: 15,
               fontWeight: 600,
-              color: 'var(--text-primary)',
+              color: 'var(--dash-text-primary)',
               maxWidth: 480,
               lineHeight: 1.3,
             }}>
@@ -186,7 +186,7 @@ function Viewer({ paper }: { paper: FinalPaper }) {
               fontFamily: 'var(--font-mono)',
               fontSize: 9,
               fontWeight: 700,
-              color: 'var(--text-muted)',
+              color: 'var(--dash-text-muted)',
               letterSpacing: '0.10em',
               marginBottom: 8,
             }}>
@@ -196,7 +196,7 @@ function Viewer({ paper }: { paper: FinalPaper }) {
               fontFamily: 'var(--font-sans)',
               fontSize: 12,
               lineHeight: 1.7,
-              color: 'var(--text-primary)',
+              color: 'var(--dash-text-primary)',
             }}>
               {paper.abstract}
             </p>
@@ -208,7 +208,7 @@ function Viewer({ paper }: { paper: FinalPaper }) {
               fontFamily: 'var(--font-mono)',
               fontSize: 9,
               fontWeight: 700,
-              color: 'var(--text-muted)',
+              color: 'var(--dash-text-muted)',
               letterSpacing: '0.10em',
               marginBottom: 10,
             }}>
@@ -230,7 +230,7 @@ function Viewer({ paper }: { paper: FinalPaper }) {
                   <span style={{
                     fontFamily: 'var(--font-sans)',
                     fontSize: 12,
-                    color: 'var(--text-primary)',
+                    color: 'var(--dash-text-primary)',
                     lineHeight: 1.5,
                   }}>
                     {f}
@@ -247,7 +247,7 @@ function Viewer({ paper }: { paper: FinalPaper }) {
                 fontFamily: 'var(--font-mono)',
                 fontSize: 10,
                 fontWeight: 700,
-                color: 'var(--text-primary)',
+                color: 'var(--dash-text-primary)',
                 letterSpacing: '0.05em',
                 marginBottom: 6,
               }}>
@@ -270,7 +270,7 @@ function Viewer({ paper }: { paper: FinalPaper }) {
               fontFamily: 'var(--font-mono)',
               fontSize: 9,
               fontWeight: 700,
-              color: 'var(--text-muted)',
+              color: 'var(--dash-text-muted)',
               letterSpacing: '0.10em',
               marginBottom: 10,
             }}>
@@ -282,7 +282,7 @@ function Viewer({ paper }: { paper: FinalPaper }) {
                   <span style={{
                     fontFamily: 'var(--font-mono)',
                     fontSize: 10,
-                    color: 'var(--text-dim)',
+                    color: 'var(--dash-text-muted)',
                     flexShrink: 0,
                     marginTop: 2,
                   }}>
@@ -293,7 +293,7 @@ function Viewer({ paper }: { paper: FinalPaper }) {
                       fontFamily: 'var(--font-sans)',
                       fontSize: 12,
                       fontWeight: 600,
-                      color: 'var(--text-primary)',
+                      color: 'var(--dash-text-primary)',
                       marginBottom: 2,
                     }}>
                       {src.title}
@@ -302,7 +302,7 @@ function Viewer({ paper }: { paper: FinalPaper }) {
                       <div style={{
                         fontFamily: 'var(--font-sans)',
                         fontSize: 11,
-                        color: 'var(--text-muted)',
+                        color: 'var(--dash-text-muted)',
                         lineHeight: 1.4,
                       }}>
                         {src.excerpt}
@@ -317,13 +317,13 @@ function Viewer({ paper }: { paper: FinalPaper }) {
                       <span style={{
                         width: 5, height: 5, borderRadius: '50%',
                         background: src.stance === 'supports' ? 'var(--green)' :
-                                    src.stance === 'contradicts' ? 'var(--red)' : 'var(--text-muted)',
+                                    src.stance === 'contradicts' ? 'var(--red)' : 'var(--dash-text-muted)',
                         display: 'inline-block',
                       }} />
                       <span style={{
                         fontFamily: 'var(--font-mono)',
                         fontSize: 9,
-                        color: 'var(--text-dim)',
+                        color: 'var(--dash-text-muted)',
                         letterSpacing: '0.04em',
                       }}>
                         {(src.stance ?? 'neutral').toUpperCase()}

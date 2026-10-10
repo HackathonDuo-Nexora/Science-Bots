@@ -57,7 +57,7 @@ export function ConflictBanner() {
               <div style={{
                 fontFamily: 'var(--font-sans)',
                 fontSize: 10,
-                color: '#2A8A5E',
+                color: '#166534',
               }}>
                 Reviewer approved — conflict resolved.
               </div>
@@ -100,7 +100,7 @@ export function ConflictBanner() {
               fontFamily: 'var(--font-mono)',
               fontSize: 10,
               fontWeight: 700,
-              color: 'var(--red)',
+              color: '#B91C1C',
               letterSpacing: '0.06em',
               marginBottom: 3,
             }}>

@@ -24,7 +24,7 @@ export function StatusOverlay({ onReset }: { onReset?: () => void }) {
           fontFamily: 'var(--font-mono)',
           fontSize: 12,
           fontWeight: 700,
-          color: 'var(--text-muted)',
+          color: 'var(--dash-text-muted)',
           letterSpacing: '0.12em',
           marginBottom: 12,
         }}>
@@ -42,7 +42,7 @@ export function StatusOverlay({ onReset }: { onReset?: () => void }) {
                 width: 6,
                 height: 6,
                 borderRadius: '50%',
-                background: 'var(--text-muted)',
+                background: 'var(--dash-text-muted)',
                 animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite`,
               }}
             />

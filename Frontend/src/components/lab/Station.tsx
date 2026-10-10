@@ -391,7 +391,7 @@ function AgentLabel({
         <div
           style={{
             fontSize: 8.5,
-            color: isAlert ? '#E5484D' : isComplete ? '#22A06B' : '#7A7F87',
+            color: isAlert ? '#B91C1C' : isComplete ? '#166534' : 'var(--dash-text-muted)',
             letterSpacing: '0.03em',
             paddingLeft: 11,
             fontWeight: isAlert || isComplete ? 600 : 400,

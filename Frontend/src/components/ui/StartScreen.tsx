@@ -67,7 +67,7 @@ export function StartScreen({ onStart }: StartScreenProps) {
             <div style={{
               fontFamily: 'var(--font-sans)',
               fontSize: 11.5,
-              color: 'var(--dash-text-muted)',
+              color: '#6B7280',
               marginBottom: 10,
             }}>
               Autonomous Research Laboratory
@@ -129,7 +129,7 @@ export function StartScreen({ onStart }: StartScreenProps) {
             textAlign: 'center',
             fontFamily: 'var(--font-sans)',
             fontSize: 11,
-            color: 'var(--dash-text-dim)',
+            color: '#6B7280',
           }}>
             Multi-agent autonomous research pipeline
           </div>

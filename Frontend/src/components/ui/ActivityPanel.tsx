@@ -84,7 +84,7 @@ function EventRow({ event }: EventRowProps) {
             fontFamily: 'var(--font-mono)',
             fontSize: 9,
             fontWeight: 700,
-            color: isConflict ? 'var(--red)' : isNeedsWork ? 'var(--state-amber)' : isFinal ? 'var(--green)' : 'var(--dash-text-primary)',
+            color: isConflict ? '#B91C1C' : isNeedsWork ? '#8A6A20' : isFinal ? '#166534' : 'var(--dash-text-primary)',
             letterSpacing: '0.06em',
           }}>
             {agentLabel(event.agent)}
@@ -100,7 +100,7 @@ function EventRow({ event }: EventRowProps) {
         <div style={{
           fontFamily: 'var(--font-sans)',
           fontSize: 11,
-          color: isConflict ? 'var(--red)' : isNeedsWork ? '#8A6A20' : 'var(--dash-text-muted)',
+          color: isConflict ? '#B91C1C' : isNeedsWork ? '#8A6A20' : 'var(--dash-text-muted)',
           lineHeight: 1.35,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
@@ -141,7 +141,7 @@ export function ActivityPanel() {
             fontFamily: 'var(--font-mono)',
             fontSize: 9,
             fontWeight: 700,
-            color: 'var(--dash-text-muted)',
+            color: '#6B7280',
             letterSpacing: '0.1em',
           }}>
             ACTIVITY
@@ -149,7 +149,7 @@ export function ActivityPanel() {
           <span style={{
             fontFamily: 'var(--font-mono)',
             fontSize: 9,
-            color: 'var(--dash-text-dim)',
+            color: '#6B7280',
           }}>
             {events.length} events
           </span>
@@ -163,7 +163,7 @@ export function ActivityPanel() {
               textAlign: 'center',
               fontFamily: 'var(--font-sans)',
               fontSize: 11,
-              color: 'var(--dash-text-dim)',
+              color: '#6B7280',
             }}>
               Waiting for events...
             </div>

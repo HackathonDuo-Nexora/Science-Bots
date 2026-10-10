@@ -53,7 +53,7 @@ export function TopBranding() {
           <div style={{
             fontFamily: 'var(--font-sans)',
             fontSize: 10,
-            color: 'var(--text-muted)',
+            color: 'var(--dash-text-muted)',
             letterSpacing: '0.04em',
           }}>
             Autonomous Research Laboratory

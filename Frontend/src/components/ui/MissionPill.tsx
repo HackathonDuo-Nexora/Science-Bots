@@ -25,6 +25,12 @@ export function MissionPill() {
     phase === 'disconnected' ? 'var(--state-amber)' :
     'var(--accent)'
 
+  const phaseTextColor =
+    phase === 'completed'    ? '#166534' :
+    phase === 'error'        ? '#B91C1C' :
+    phase === 'disconnected' ? '#B45309' :
+    '#1D4ED8'
+
   return (
     <div style={{
       position: 'absolute',
@@ -54,7 +60,7 @@ export function MissionPill() {
           fontFamily: 'var(--font-sans)',
           fontSize: 12,
           fontWeight: 600,
-          color: 'var(--text-primary)',
+          color: 'var(--dash-text-primary)',
           maxWidth: 280,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
@@ -64,14 +70,14 @@ export function MissionPill() {
         </span>
 
         {/* Divider */}
-        <span style={{ color: 'var(--border)', fontSize: 14 }}>|</span>
+        <span style={{ color: 'var(--dash-text-dim)', fontSize: 14 }}>|</span>
 
         {/* Progress */}
         <span style={{
           fontFamily: 'var(--font-mono)',
           fontSize: 11,
           fontWeight: 700,
-          color: phaseColor,
+          color: phaseTextColor,
           letterSpacing: '0.04em',
           minWidth: 44,
           textAlign: 'right',

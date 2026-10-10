@@ -13,10 +13,10 @@ import type { Claim, Source } from '@/types'
 // ─────────────────────────────────────────────
 function VerificationBadge({ status }: { status: Claim['verificationStatus'] }) {
   const map = {
-    pending:     { label: 'PENDING',     bg: '#F5F1E8', color: '#8A7A50', border: '#D8CFA8' },
+    pending:     { label: 'PENDING',     bg: '#F5F1E8', color: '#705E35', border: '#D8CFA8' },
     supported:   { label: 'SUPPORTED',   bg: '#DCFAEB', color: '#1A7A4E', border: '#90D8B0' },
     conflict:    { label: 'CONFLICT',    bg: '#FFE4E4', color: '#B02020', border: '#F0A0A0' },
-    unsupported: { label: 'UNSUPPORTED', bg: '#FFF0DC', color: '#B06000', border: '#F0C880' },
+    unsupported: { label: 'UNSUPPORTED', bg: '#FFF0DC', color: '#854400', border: '#F0C880' },
   }
   const s = map[status]
   return (
@@ -43,7 +43,7 @@ function SourceChip({ source }: { source: Source }) {
   const stanceColor =
     source.stance === 'supports'     ? 'var(--green)' :
     source.stance === 'contradicts'  ? 'var(--red)' :
-    'var(--text-muted)'
+    'var(--dash-text-muted)'
 
   return (
     <div style={{
@@ -55,7 +55,7 @@ function SourceChip({ source }: { source: Source }) {
       background: '#F8F5EF',
       border: '1px solid var(--border-soft)',
       fontSize: 10,
-      color: 'var(--text-muted)',
+      color: 'var(--dash-text-muted)',
       fontFamily: 'var(--font-sans)',
     }}>
       <span style={{
@@ -94,7 +94,7 @@ function EvidenceView({ claim, sources, onClose }: {
           fontFamily: 'var(--font-mono)',
           fontSize: 9,
           fontWeight: 700,
-          color: 'var(--text-muted)',
+          color: 'var(--dash-text-muted)',
           letterSpacing: '0.1em',
         }}>
           EVIDENCE DETAIL
@@ -104,7 +104,7 @@ function EvidenceView({ claim, sources, onClose }: {
           style={{
             background: 'none', border: 'none', cursor: 'pointer',
             fontFamily: 'var(--font-mono)', fontSize: 10,
-            color: 'var(--text-dim)', padding: '0 2px',
+            color: 'var(--dash-text-dim)', padding: '0 2px',
           }}
         >
           ✕
@@ -115,7 +115,7 @@ function EvidenceView({ claim, sources, onClose }: {
       <div style={{
         fontFamily: 'var(--font-sans)',
         fontSize: 11,
-        color: 'var(--text-primary)',
+        color: 'var(--dash-text-primary)',
         lineHeight: 1.5,
         padding: '8px 10px',
         background: '#F8F5EF',
@@ -129,7 +129,7 @@ function EvidenceView({ claim, sources, onClose }: {
       <div style={{
         fontFamily: 'var(--font-mono)',
         fontSize: 9,
-        color: 'var(--text-dim)',
+        color: 'var(--dash-text-muted)',
         letterSpacing: '0.08em',
         marginBottom: 6,
       }}>
@@ -152,14 +152,14 @@ function EvidenceView({ claim, sources, onClose }: {
               <span style={{
                 width: 6, height: 6, borderRadius: '50%',
                 background: src.stance === 'supports' ? 'var(--green)' :
-                            src.stance === 'contradicts' ? 'var(--red)' : 'var(--text-muted)',
+                            src.stance === 'contradicts' ? 'var(--red)' : 'var(--dash-text-muted)',
                 flexShrink: 0,
               }} />
               <span style={{
                 fontFamily: 'var(--font-sans)',
                 fontSize: 10,
                 fontWeight: 600,
-                color: 'var(--text-primary)',
+                color: 'var(--dash-text-primary)',
               }}>
                 {src.title}
               </span>
@@ -168,7 +168,7 @@ function EvidenceView({ claim, sources, onClose }: {
               <div style={{
                 fontFamily: 'var(--font-sans)',
                 fontSize: 10,
-                color: 'var(--text-muted)',
+                color: 'var(--dash-text-muted)',
                 lineHeight: 1.4,
                 paddingLeft: 11,
               }}>
@@ -191,7 +191,7 @@ function EvidenceView({ claim, sources, onClose }: {
         <span style={{
           fontFamily: 'var(--font-mono)',
           fontSize: 9,
-          color: 'var(--text-dim)',
+          color: 'var(--dash-text-muted)',
           letterSpacing: '0.06em',
         }}>
           VERIFICATION
@@ -265,7 +265,7 @@ export function ClaimCard() {
             fontFamily: 'var(--font-mono)',
             fontSize: 9,
             fontWeight: 700,
-            color: 'var(--text-muted)',
+            color: 'var(--dash-text-muted)',
             letterSpacing: '0.1em',
           }}>
             CURRENT CLAIM
@@ -279,7 +279,7 @@ export function ClaimCard() {
             <div style={{
               fontFamily: 'var(--font-sans)',
               fontSize: 11,
-              color: 'var(--text-primary)',
+              color: 'var(--dash-text-primary)',
               lineHeight: 1.5,
               marginBottom: 8,
               display: '-webkit-box',
@@ -295,15 +295,15 @@ export function ClaimCard() {
               <span style={{
                 fontFamily: 'var(--font-mono)',
                 fontSize: 9,
-                color: 'var(--text-dim)',
+                color: 'var(--dash-text-muted)',
               }}>
                 {claim.evidenceIds.length} evidence
               </span>
-              <span style={{ color: 'var(--border)', fontSize: 9 }}>·</span>
+              <span style={{ color: 'var(--dash-text-dim)', fontSize: 9 }}>·</span>
               <span style={{
                 fontFamily: 'var(--font-mono)',
                 fontSize: 9,
-                color: 'var(--text-dim)',
+                color: 'var(--dash-text-muted)',
               }}>
                 {claim.sourceIds.length} sources
               </span>
@@ -319,7 +319,7 @@ export function ClaimCard() {
                   <span style={{
                     fontFamily: 'var(--font-mono)',
                     fontSize: 9,
-                    color: 'var(--text-dim)',
+                    color: 'var(--dash-text-muted)',
                     paddingLeft: 5,
                   }}>
                     +{sources.length - 2} more
@@ -332,7 +332,7 @@ export function ClaimCard() {
               marginTop: 8,
               fontFamily: 'var(--font-mono)',
               fontSize: 9,
-              color: 'var(--text-dim)',
+              color: 'var(--dash-text-muted)',
               letterSpacing: '0.04em',
             }}>
               {expanded ? 'CLICK TO COLLAPSE' : 'CLICK FOR EVIDENCE'}
@@ -344,7 +344,7 @@ export function ClaimCard() {
             textAlign: 'center',
             fontFamily: 'var(--font-sans)',
             fontSize: 11,
-            color: 'var(--text-dim)',
+            color: 'var(--dash-text-muted)',
           }}>
             Awaiting claims...
           </div>
