@@ -117,45 +117,128 @@ function determineSourceType(item, domain) {
   return 'academic';
 }
 
+const GENERIC_AI_TERMS = new Set([
+  'ai', 'artificial', 'intelligence', 'agent', 'agents', 'agentic',
+  'model', 'models', 'system', 'systems', 'learning', 'machine',
+  'algorithm', 'algorithms', 'deep', 'neural', 'framework', 'frameworks',
+  'study', 'analysis', 'empirical', 'paper', 'literature', 'review',
+  'approach', 'methods', 'methodology', 'evaluation', 'performance', 'benchmark'
+]);
+
+// Contrast domains to detect blatant subject-matter mismatches
+const CONTRASTING_DOMAINS = [
+  { domain: 'finance', keywords: ['finance', 'financial', 'banking', 'market', 'markets', 'stock', 'stocks', 'portfolio', 'asset', 'assets', 'trading', 'cryptocurrency', 'bitcoin', 'blockchain', 'macroeconomic', 'fiscal'] },
+  { domain: 'medical', keywords: ['medical', 'medicine', 'diagnosis', 'diagnostic', 'clinical', 'patient', 'patients', 'healthcare', 'disease', 'diseases', 'therapy', 'hospital', 'pathology', 'radiology', 'oncology', 'physician', 'biomedical'] },
+  { domain: 'quantum', keywords: ['quantum', 'qubit', 'qubits', 'entanglement', 'superposition', 'coherence'] },
+  { domain: 'astronomy', keywords: ['galaxy', 'galaxies', 'stellar', 'cosmology', 'telescope', 'astronomical', 'planetary', 'astrophysics'] },
+  { domain: 'agriculture', keywords: ['crop', 'crops', 'farming', 'agricultural', 'soil', 'irrigation', 'yield', 'harvest'] },
+];
+
 /**
- * Lightweight relevance calculation (0.0 to 1.0) based on topic keywords.
+ * Check whether a source is relevant to the topic or discusses an unrelated domain.
  */
-function calculateRelevance(topic, title, snippet) {
-  const keywords = topic
+export function isSourceRelevant(topic, title, snippet) {
+  const score = calculateRelevance(topic, title, snippet);
+  return score >= 0.45;
+}
+
+function textMatchesKeyword(text, kw) {
+  if (!text || !kw) return false;
+  if (text.includes(kw)) return true;
+  if (kw.length >= 5) {
+    const prefix = kw.substring(0, Math.min(kw.length - 1, 6));
+    if (text.includes(prefix)) return true;
+  }
+  return false;
+}
+
+/**
+ * Rigorous relevance calculation (0.0 to 1.0) based on domain-specific topic keywords.
+ */
+export function calculateRelevance(topic, title, snippet) {
+  if (!topic || typeof topic !== 'string' || !topic.trim()) return 0.0;
+
+  const topicWords = topic
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
     .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
 
-  if (keywords.length === 0) return 0.75;
+  if (topicWords.length === 0) return 0.0;
 
+  const domainKeywords = topicWords.filter((w) => !GENERIC_AI_TERMS.has(w));
   const titleLower   = (title || '').toLowerCase();
   const snippetLower = (snippet || '').toLowerCase();
+  const combinedText = `${titleLower} ${snippetLower}`;
 
-  let matches = 0;
-  for (const kw of keywords) {
-    if (titleLower.includes(kw)) {
-      matches += 2; // Title matches weighted 2x
-    } else if (snippetLower.includes(kw)) {
-      matches += 1; // Snippet matches weighted 1x
+  // Domain mismatch detection
+  for (const group of CONTRASTING_DOMAINS) {
+    const topicHasDomain = group.keywords.some((kw) => topic.toLowerCase().includes(kw));
+    if (topicHasDomain) {
+      // Find if paper belongs to an opposing domain without matching current domain
+      for (const otherGroup of CONTRASTING_DOMAINS) {
+        if (otherGroup.domain === group.domain) continue;
+        const paperHasOtherDomain = otherGroup.keywords.some((kw) => combinedText.includes(kw));
+        const paperHasCurrentDomain = group.keywords.some((kw) => combinedText.includes(kw));
+        if (paperHasOtherDomain && !paperHasCurrentDomain) {
+          // Blatant domain mismatch (e.g. Finance paper when query is Medical)
+          return 0.0;
+        }
+      }
     }
   }
 
-  const maxPossible = keywords.length * 2;
-  const ratio = Math.min(1.0, matches / maxPossible);
-  const score = 0.65 + ratio * 0.33; // Scales gracefully between 0.65 and 0.98
-  return Math.round(score * 100) / 100;
+  // If topic has domain-specific keywords (e.g. medical, diagnosis), candidate MUST match at least one
+  if (domainKeywords.length > 0) {
+    const matchesDomain = domainKeywords.some(
+      (kw) => textMatchesKeyword(titleLower, kw) || textMatchesKeyword(snippetLower, kw)
+    );
+    if (!matchesDomain) {
+      // Only generic AI terms matched; reject as unrelated
+      return 0.15;
+    }
+  }
+
+  let domainMatches = 0;
+  for (const kw of domainKeywords) {
+    if (textMatchesKeyword(titleLower, kw)) domainMatches += 3;
+    else if (textMatchesKeyword(snippetLower, kw)) domainMatches += 2;
+  }
+
+  let otherMatches = 0;
+  for (const kw of topicWords) {
+    if (!domainKeywords.includes(kw)) {
+      if (textMatchesKeyword(titleLower, kw)) otherMatches += 1;
+      else if (textMatchesKeyword(snippetLower, kw)) otherMatches += 0.5;
+    }
+  }
+
+  // Matching a domain keyword establishes clear relevance
+  const domainRatio = domainKeywords.length > 0
+    ? Math.min(1.0, domainMatches / 3.0)
+    : 1.0;
+  const otherRatio = topicWords.length > domainKeywords.length
+    ? Math.min(1.0, otherMatches / Math.max(1, (topicWords.length - domainKeywords.length)))
+    : 1.0;
+
+  const finalScore = domainKeywords.length > 0
+    ? domainRatio * 0.70 + otherRatio * 0.30
+    : otherRatio;
+
+  return Math.round(Math.min(1.0, Math.max(0.0, finalScore)) * 100) / 100;
 }
 
 /**
  * Extract initial pending claims from real source snippets.
- * Each claim references an existing source ID.
+ * Each claim references an existing source ID and real extracted evidence excerpt.
  */
 function extractClaims(sources, topic, pass = 'initial') {
   const claims = [];
 
   for (const source of sources.slice(0, 2)) {
     let claimText = '';
+    let hasSubstantiveEvidence = false;
+
     if (source.snippet && source.snippet.length > 40) {
       const sentences = source.snippet
         .split(/(?<=[.!?])\s+/)
@@ -168,28 +251,49 @@ function extractClaims(sources, topic, pass = 'initial') {
 
       if (sentences.length > 0) {
         claimText = sentences[0];
+        hasSubstantiveEvidence = true;
       }
     }
 
     if (!claimText) {
-      claimText = `Evidence from "${source.title}" indicates measurable impact within ${topic}.`;
+      claimText = `Scholarly literature in "${source.title}" evaluates core methodological aspects of ${topic}.`;
+      hasSubstantiveEvidence = false;
     }
 
+    const evidenceId = hasSubstantiveEvidence
+      ? `ev_${source.id.replace('src_', '')}`
+      : null;
+
+    const evidenceList = hasSubstantiveEvidence
+      ? [
+          {
+            id: evidenceId,
+            sourceId: source.id,
+            text: claimText,
+            excerpt: claimText,
+          },
+        ]
+      : [];
+
     claims.push({
-      id:        `claim_${crypto.randomUUID().replace(/-/g, '')}`,
-      text:      claimText,
-      status:    'pending',
-      sourceIds: [source.id],
+      id:          `claim_${crypto.randomUUID().replace(/-/g, '')}`,
+      text:        claimText,
+      status:      'pending',
+      sourceIds:   [source.id],
+      evidenceIds: evidenceId ? [evidenceId] : [],
+      evidence:    evidenceList,
     });
   }
 
   // Formulate an exploratory gap claim on initial pass that requires broader empirical cross-validation
   if (pass === 'initial' && sources.length >= 2) {
     claims.push({
-      id:        `claim_${crypto.randomUUID().replace(/-/g, '')}`,
-      text:      `Long-term empirical validation is required to quantify how "${topic}" mitigates systemic zero-day vulnerabilities in production infrastructure.`,
-      status:    'pending',
-      sourceIds: [],
+      id:          `claim_${crypto.randomUUID().replace(/-/g, '')}`,
+      text:        `Empirical multi-site evaluation is required to evaluate consistency and boundary conditions for "${topic}".`,
+      status:      'pending',
+      sourceIds:   [],
+      evidenceIds: [],
+      evidence:    [],
     });
   }
 
@@ -316,6 +420,11 @@ export async function searchOpenAlex({ topic, existingSources = [], pass = 'init
     const sourceType = determineSourceType(item, domain);
     const relevance  = calculateRelevance(cleanTopic, item.title, snippet);
 
+    if (!isSourceRelevant(cleanTopic, item.title, snippet)) {
+      console.log(`[RealResearchProvider] Rejected unrelated OpenAlex source: "${item.title}" (relevance: ${relevance})`);
+      continue;
+    }
+
     sources.push({
       id:         `src_${crypto.randomUUID().replace(/-/g, '')}`,
       title:      item.title,
@@ -398,6 +507,11 @@ export async function searchCrossref({ topic, existingSources = [], pass = 'init
 
     const sourceType = determineSourceType(item, domain);
     const relevance  = calculateRelevance(cleanTopic, title, snippet);
+
+    if (!isSourceRelevant(cleanTopic, title, snippet)) {
+      console.log(`[RealResearchProvider] Rejected unrelated Crossref source: "${title}" (relevance: ${relevance})`);
+      continue;
+    }
 
     sources.push({
       id:         `src_${crypto.randomUUID().replace(/-/g, '')}`,

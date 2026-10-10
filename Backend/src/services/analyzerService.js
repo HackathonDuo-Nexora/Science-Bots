@@ -12,6 +12,8 @@
  *   Outside knowledge and hallucinated citations are strictly prohibited.
  */
 
+import { isSourceRelevant } from './research/realResearchProvider.js';
+
 const GEMINI_MODEL = (process.env.GEMINI_MODEL || 'gemini-3.8-flash').trim();
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
@@ -77,17 +79,18 @@ function prepareSourcePayload(sources) {
  */
 function prepareClaimPayload(claims) {
   return claims.map((c) => ({
-    id:        c.id,
-    text:      c.text,
-    sourceIds: c.sourceIds ?? [],
+    id:          c.id,
+    text:        c.text,
+    sourceIds:   c.sourceIds ?? [],
+    evidenceIds: c.evidenceIds ?? [],
   }));
 }
 
 /**
- * Validate and repair model output against strict grounding rules.
+ * Validate and repair model output against strict grounding and evidence rules.
  */
-function validateAndRepairResults(rawResults, claims, sources) {
-  const validSourceIds = new Set(sources.map((s) => s.id));
+function validateAndRepairResults(rawResults, claims, sources, topic = '') {
+  const validSourceMap = new Map(sources.map((s) => [s.id, s]));
   const validClaimMap  = new Map(claims.map((c) => [c.id, c]));
   const evaluatedMap   = new Map();
 
@@ -98,7 +101,8 @@ function validateAndRepairResults(rawResults, claims, sources) {
       if (!item || typeof item !== 'object' || !item.claimId) continue;
 
       const claimId = String(item.claimId);
-      if (!validClaimMap.has(claimId)) continue; // Reject unknown claims
+      const originalClaim = validClaimMap.get(claimId);
+      if (!originalClaim) continue; // Reject unknown claims
 
       // Validate & clean status
       let status = String(item.status || 'insufficient').toLowerCase().trim();
@@ -106,15 +110,37 @@ function validateAndRepairResults(rawResults, claims, sources) {
         status = 'insufficient';
       }
 
-      // Filter sourceIds strictly to known source IDs from input
+      // Filter sourceIds strictly to known source IDs from input AND check topic relevance
       const rawSourceIds = Array.isArray(item.sourceIds) ? item.sourceIds : [];
       const cleanSourceIds = rawSourceIds
         .map(String)
-        .filter((id) => validSourceIds.has(id));
+        .filter((id) => {
+          const src = validSourceMap.get(id);
+          if (!src) return false;
+          // Topic relevance check: Reject sources that are unrelated to the research topic
+          if (topic && typeof isSourceRelevant === 'function') {
+            if (!isSourceRelevant(topic, src.title, src.snippet)) {
+              return false;
+            }
+          }
+          return true;
+        });
 
-      // Grounding rule: A supported claim MUST reference at least one valid sourceId
-      if (status === 'supported' && cleanSourceIds.length === 0) {
-        status = 'insufficient';
+      // Filter evidenceIds
+      const validClaimEvidenceIds = new Set(originalClaim.evidenceIds || []);
+      const rawEvidenceIds = Array.isArray(item.evidenceIds) ? item.evidenceIds : [];
+      let cleanEvidenceIds = rawEvidenceIds
+        .map(String)
+        .filter((id) => validClaimEvidenceIds.has(id));
+
+      // If model omitted evidenceIds but cited valid relevant sources that have evidence
+      if (cleanEvidenceIds.length === 0 && cleanSourceIds.length > 0) {
+        if (originalClaim.evidenceIds && originalClaim.evidenceIds.length > 0) {
+          cleanEvidenceIds = [...originalClaim.evidenceIds];
+        } else if (originalClaim.evidenceIds === undefined) {
+          // Backward-compatible for claims where evidenceIds field is not defined
+          cleanEvidenceIds = cleanSourceIds.map((id) => `ev_${id}`);
+        }
       }
 
       // Confidence clamp: float between 0.0 and 1.0
@@ -123,14 +149,29 @@ function validateAndRepairResults(rawResults, claims, sources) {
       if (confidence > 1.0) confidence = 1.0;
       confidence = Math.round(confidence * 100) / 100;
 
+      // STRICT GROUNDING INVARIANTS:
+      // A claim can ONLY be marked 'supported' when:
+      // 1. cleanSourceIds has at least 1 verified, relevant source
+      // 2. cleanEvidenceIds has at least 1 verified evidence item (>0 evidence)
+      // 3. confidence >= 0.60
+      if (status === 'supported') {
+        if (cleanSourceIds.length === 0 || cleanEvidenceIds.length === 0 || confidence < 0.60) {
+          status = 'insufficient';
+          cleanEvidenceIds = [];
+          confidence = Math.min(confidence, 0.45);
+        }
+      }
+
       // Summary cleaning: short high-level explanation, no chain-of-thought
       let summary = typeof item.summary === 'string' ? item.summary.trim() : '';
       if (!summary) {
         summary = status === 'supported'
-          ? 'Evidence directly supports the key proposition.'
+          ? 'Direct empirical evidence supports the claim.'
           : status === 'conflict'
           ? 'Conflicting evidence identified across sources.'
-          : 'Evidence is insufficient or indirect.';
+          : 'Evidence is insufficient, empty, or unverified in retrieved sources.';
+      } else if (status === 'insufficient' && !summary.toLowerCase().includes('insufficient')) {
+        summary = `Insufficient evidence: ${summary}`;
       }
       if (summary.length > 250) {
         summary = `${summary.substring(0, 247)}...`;
@@ -140,7 +181,8 @@ function validateAndRepairResults(rawResults, claims, sources) {
         claimId,
         status,
         confidence,
-        sourceIds: cleanSourceIds,
+        sourceIds:   cleanSourceIds,
+        evidenceIds: cleanEvidenceIds,
         summary,
       });
     }
@@ -153,35 +195,47 @@ function validateAndRepairResults(rawResults, claims, sources) {
     }
 
     // Fallback for omitted claim
-    const fallbackSourceIds = (c.sourceIds || []).filter((id) => validSourceIds.has(id));
+    const fallbackSourceIds = (c.sourceIds || []).filter((id) => validSourceMap.has(id));
     return {
-      claimId:    c.id,
-      status:     'insufficient',
-      confidence: 0.35,
-      sourceIds:  fallbackSourceIds,
-      summary:    'Insufficient evidence directly substantiating this claim.',
+      claimId:     c.id,
+      status:      'insufficient',
+      confidence:  0.30,
+      sourceIds:   fallbackSourceIds,
+      evidenceIds: [],
+      summary:     'Insufficient direct evidence substantiating this claim.',
     };
   });
 }
 
 /**
  * Fallback heuristic evaluation used only if Gemini API is unreachable.
+ * Never marks supported without valid evidence and relevant sources.
  */
-function fallbackHeuristicEvaluation(claims, sources) {
-  const validSourceIds = new Set(sources.map((s) => s.id));
+function fallbackHeuristicEvaluation(claims, sources, topic = '') {
+  const validSourceMap = new Map(sources.map((s) => [s.id, s]));
 
   return claims.map((c) => {
-    const matchingIds = (c.sourceIds || []).filter((id) => validSourceIds.has(id));
-    const isSupported = matchingIds.length > 0;
+    const matchingIds = (c.sourceIds || []).filter((id) => {
+      const src = validSourceMap.get(id);
+      if (!src) return false;
+      if (topic && typeof isSourceRelevant === 'function') {
+        return isSourceRelevant(topic, src.title, src.snippet);
+      }
+      return true;
+    });
+
+    const hasEvidence = matchingIds.length > 0 && Array.isArray(c.evidenceIds) && c.evidenceIds.length > 0;
+    const isSupported = hasEvidence && matchingIds.length > 0;
 
     return {
-      claimId:    c.id,
-      status:     isSupported ? 'supported' : 'insufficient',
-      confidence: isSupported ? 0.75 : 0.30,
-      sourceIds:  matchingIds,
-      summary:    isSupported
-        ? 'Preliminary evidence support verified via heuristic fallback.'
-        : 'Additional evidence required to substantiate claim.',
+      claimId:     c.id,
+      status:      isSupported ? 'supported' : 'insufficient',
+      confidence:  isSupported ? 0.70 : 0.30,
+      sourceIds:   matchingIds,
+      evidenceIds: isSupported ? c.evidenceIds : [],
+      summary:     isSupported
+        ? 'Direct empirical evidence support verified.'
+        : 'Evidence is insufficient or lacking direct supporting citations.',
     };
   });
 }
@@ -213,15 +267,16 @@ export async function analyzeClaims({ topic, claims = [], sources = [] }) {
   const systemInstruction = `You are the Analyzer Agent in Science Bots, an autonomous scholarly research team.
 Your task is to evaluate research claims strictly against the provided sources.
 
-STRICT GROUNDING RULES:
-1. You may ONLY use evidence directly supplied in the provided sources.
-2. Do NOT use outside general knowledge or fabricate facts.
-3. Every supported claim MUST reference one or more valid sourceIds from the provided sources.
-4. If a claim is not adequately substantiated by the text, classify it as "insufficient".
-5. If credible sources directly contradict each other or the claim, classify it as "conflict".
-6. If the sources adequately substantiate the claim, classify it as "supported".
-7. Confidence must be a number between 0.0 and 1.0 (analytical confidence). Do not assign >= 0.95 without strong multi-source evidence.
-8. "summary" must be a concise (1-2 sentences) high-level evidence assessment. Do NOT include reasoning steps, deliberation, or chain of thought.
+STRICT GROUNDING & VERIFICATION RULES:
+1. TOPIC RELEVANCE: Evidence must directly support the claim within the scope of Research Topic: "${topic}".
+   Reject unrelated sources even if their titles or text contain generic AI terminology (e.g. finance, banking, economics when the topic is medical diagnosis).
+2. DIRECT EVIDENCE REQUIRED: Only mark a claim "supported" if the provided source text explicitly and directly substantiates the claim with empirical or theoretical evidence.
+3. INSUFFICIENT EVIDENCE: If evidence is missing, empty, generic, indirect, irrelevant, or inconclusive, you MUST classify the claim as "insufficient".
+4. CONFLICT: If credible sources directly contradict each other or the claim, classify the claim as "conflict".
+5. Every "supported" claim MUST cite the supporting "sourceIds" AND include supporting "evidenceIds" from the provided input claims. If evidence is empty, status MUST NOT be "supported".
+6. Do NOT fabricate outside facts, evidence, or citations. Ground evaluation exclusively on the provided text.
+7. Confidence must be between 0.0 and 1.0. Do not assign confidence >= 0.8 without strong direct evidence.
+8. "summary" must be a concise (1-2 sentences) high-level evidence assessment.
 
 Output MUST be a JSON array of objects conforming to:
 [
@@ -230,6 +285,7 @@ Output MUST be a JSON array of objects conforming to:
     "status": "supported" | "conflict" | "insufficient",
     "confidence": number,
     "sourceIds": ["string"],
+    "evidenceIds": ["string"],
     "summary": "string"
   }
 ]`;
@@ -299,7 +355,7 @@ function getCandidateModels() {
       }
 
       const parsed = JSON.parse(rawContent);
-      return validateAndRepairResults(parsed, claims, sources);
+      return validateAndRepairResults(parsed, claims, sources, topic);
     } catch (err) {
       lastError = err;
       if (candidateModels.indexOf(model) < candidateModels.length - 1) {

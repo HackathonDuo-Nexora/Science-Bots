@@ -92,22 +92,25 @@ async function handoff(researchId, fromAgent, toAgent, message) {
 function buildClaims(topic, sourceIds, nextClmId) {
   return [
     {
-      id:        nextClmId(),
-      text:      `[DEMO] The primary domain of "${topic}" has demonstrated measurable impact across recent literature.`,
-      status:    'pending',
-      sourceIds: [sourceIds[0]],
+      id:          nextClmId(),
+      text:        `[DEMO] The primary domain of "${topic}" has demonstrated measurable impact across recent literature.`,
+      status:      'pending',
+      sourceIds:   [sourceIds[0]],
+      evidenceIds: [sourceIds[0] ? `ev_${sourceIds[0]}` : 'ev_demo_1'],
     },
     {
-      id:        nextClmId(),
-      text:      `[DEMO] Existing methodologies show significant variation in outcomes related to "${topic}".`,
-      status:    'pending',
-      sourceIds: [sourceIds[1]],
+      id:          nextClmId(),
+      text:        `[DEMO] Existing methodologies show significant variation in outcomes related to "${topic}".`,
+      status:      'pending',
+      sourceIds:   [sourceIds[1]],
+      evidenceIds: [sourceIds[1] ? `ev_${sourceIds[1]}` : 'ev_demo_2'],
     },
     {
-      id:        nextClmId(),
-      text:      `[DEMO] Current research gaps indicate opportunities for further investigation into "${topic}".`,
-      status:    'pending',
-      sourceIds: [sourceIds[0], sourceIds[2] ?? sourceIds[1]],
+      id:          nextClmId(),
+      text:        `[DEMO] Current research gaps indicate opportunities for further investigation into "${topic}".`,
+      status:      'pending',
+      sourceIds:   [sourceIds[0], sourceIds[2] ?? sourceIds[1]],
+      evidenceIds: [sourceIds[0] ? `ev_${sourceIds[0]}` : 'ev_demo_1', sourceIds[2] ? `ev_${sourceIds[2]}` : 'ev_demo_3'],
     },
   ];
 }
@@ -161,9 +164,14 @@ function buildPaper(topic, sources, claims, isRevised, isDemo = false) {
         ]
       : claims.slice(0, 3).map((c, i) => {
           const isTargetedRevision = isRevised && (i === 2 || i === claims.length - 1);
+          const statusLabel = c.status === 'supported'
+            ? 'SUPPORTED'
+            : c.status === 'conflict'
+            ? 'CONFLICT'
+            : 'INSUFFICIENT EVIDENCE / UNVERIFIED';
           return {
             heading: `Finding ${i + 1}: ${c.text.substring(0, 50)}...`,
-            content: `${c.text}\nEvidence Assessment (${(c.status || 'supported').toUpperCase()}, ${Math.round((c.confidence || 0.8) * 100)}% confidence): ${c.summary || 'Corroborated by literature.'} [Cited Source IDs: ${(c.sourceIds || []).join(', ') || 'Literature'}]` +
+            content: `${c.text}\nEvidence Assessment (${statusLabel}, ${Math.round((c.confidence || 0.8) * 100)}% confidence): ${c.summary || (c.status === 'supported' ? 'Corroborated by literature.' : 'Evidence is insufficient or indirect.')} [Cited Source IDs: ${(c.sourceIds || []).join(', ') || 'Literature'}]` +
               (isTargetedRevision
                 ? `\n\n[Revised following reviewer verification: Evidence cross-referenced with ${sources.length} retrieved scholarly sources and citations re-validated.]`
                 : ''),
@@ -596,31 +604,43 @@ async function runWorkflow(researchId, topic) {
 
       const updatedClaim = {
         ...claim,
-        status:     evalItem.status,
-        confidence: evalItem.confidence,
-        sourceIds:  evalItem.sourceIds,
-        summary:    evalItem.summary,
+        status:      evalItem.status,
+        confidence:  evalItem.confidence,
+        sourceIds:   evalItem.sourceIds || [],
+        evidenceIds: evalItem.evidenceIds || claim.evidenceIds || [],
+        summary:     evalItem.summary,
       };
+
+      // Strict grounding: Never mark a claim supported if evidence or source count is 0
+      if (updatedClaim.status === 'supported' && (updatedClaim.evidenceIds.length === 0 || updatedClaim.sourceIds.length === 0)) {
+        updatedClaim.status = 'insufficient';
+        updatedClaim.evidenceIds = [];
+        updatedClaim.confidence = Math.min(updatedClaim.confidence || 0.45, 0.45);
+        if (!updatedClaim.summary.toLowerCase().includes('insufficient')) {
+          updatedClaim.summary = 'Insufficient direct evidence found in retrieved literature.';
+        }
+      }
 
       addClaim(researchId, updatedClaim);
       verifiedClaims.push(updatedClaim);
 
-      if (evalItem.status === 'supported') {
+      if (updatedClaim.status === 'supported') {
         fire(researchId, {
           type:    EVENT_TYPES.CLAIM_VERIFIED,
           agent:   AGENT_IDS.ANALYZER,
           status:  AGENT_STATES.VERIFYING,
           action:  'claim_verified',
-          message: `Claim verified (${Math.round(evalItem.confidence * 100)}% conf): "${(claim.text || '').substring(0, 80)}…"`,
+          message: `Claim verified (${Math.round(updatedClaim.confidence * 100)}% conf, ${updatedClaim.evidenceIds.length} evidence): "${(claim.text || '').substring(0, 80)}…"`,
           payload: {
-            claimId:    updatedClaim.id,
-            status:     'supported',
-            confidence: updatedClaim.confidence,
-            sourceIds:  updatedClaim.sourceIds,
-            summary:    updatedClaim.summary,
+            claimId:     updatedClaim.id,
+            status:      'supported',
+            confidence:  updatedClaim.confidence,
+            sourceIds:   updatedClaim.sourceIds,
+            evidenceIds: updatedClaim.evidenceIds,
+            summary:     updatedClaim.summary,
           },
         });
-      } else if (evalItem.status === 'conflict') {
+      } else if (updatedClaim.status === 'conflict') {
         fire(researchId, {
           type:    EVENT_TYPES.CONFLICT_DETECTED,
           agent:   AGENT_IDS.ANALYZER,
@@ -628,11 +648,12 @@ async function runWorkflow(researchId, topic) {
           action:  'conflict_detected',
           message: `Conflicting evidence detected: "${(claim.text || '').substring(0, 80)}…"`,
           payload: {
-            claimId:    updatedClaim.id,
-            status:     'conflict',
-            confidence: updatedClaim.confidence,
-            sourceIds:  updatedClaim.sourceIds,
-            summary:    updatedClaim.summary,
+            claimId:     updatedClaim.id,
+            status:      'conflict',
+            confidence:  updatedClaim.confidence,
+            sourceIds:   updatedClaim.sourceIds,
+            evidenceIds: updatedClaim.evidenceIds,
+            summary:     updatedClaim.summary,
           },
         });
       } else {
@@ -643,10 +664,12 @@ async function runWorkflow(researchId, topic) {
           action:  'insufficient_evidence_final',
           message: `Evidence remains insufficient for: "${(claim.text || '').substring(0, 80)}…"`,
           payload: {
-            claimId:    updatedClaim.id,
-            status:     'insufficient',
-            confidence: updatedClaim.confidence,
-            summary:    updatedClaim.summary,
+            claimId:     updatedClaim.id,
+            status:      'insufficient',
+            confidence:  updatedClaim.confidence,
+            sourceIds:   updatedClaim.sourceIds,
+            evidenceIds: updatedClaim.evidenceIds,
+            summary:     updatedClaim.summary,
           },
         });
       }
@@ -798,21 +821,34 @@ async function runWorkflow(researchId, topic) {
     'final_review', 'Performing final verification...');
   await delay(1400);
 
-  // Final claim verifications (2 of 3 re-confirmed)
-  for (const claim of claims.slice(0, 2)) {
+  // Final claim verifications: ONLY re-confirm claims that are actually supported with evidence!
+  const supportedClaims = claims.filter(
+    (c) => c.status === 'supported' && Array.isArray(c.evidenceIds) && c.evidenceIds.length > 0
+  );
+  for (const claim of supportedClaims.slice(0, 2)) {
     fire(researchId, {
       type:    EVENT_TYPES.CLAIM_VERIFIED,
       agent:   AGENT_IDS.REVIEWER,
       status:  AGENT_STATES.VERIFYING,
       action:  'final_claim_verified',
       message: `Final verification passed: "${claim.text.substring(0, 80)}…"`,
-      payload: { claimId: claim.id, verifiedBy: AGENT_IDS.REVIEWER },
+      payload: {
+        claimId:     claim.id,
+        verifiedBy:  AGENT_IDS.REVIEWER,
+        status:      'supported',
+        evidenceIds: claim.evidenceIds,
+        sourceIds:   claim.sourceIds,
+      },
     });
     await delay(600);
   }
 
+  const approvalMsg = supportedClaims.length > 0
+    ? `Research paper approved with ${supportedClaims.length} verified claim(s). Citations and evidence validated.`
+    : `Research paper finalized with provisional findings: retrieved literature provided insufficient empirical evidence to support key claims.`;
+
   await agentUpdate(researchId, AGENT_IDS.REVIEWER, AGENT_STATES.COMPLETED,
-    'approved', 'Research paper approved. All claims verified and citations consistent.');
+    'approved', approvalMsg);
   await delay(700);
 
   // Orchestrator closes the loop

@@ -94,11 +94,11 @@ describe('Production Reliability: Source Retrieval & 429 Recovery', () => {
               items: [
                 {
                   DOI: '10.1145/3318464.3389700',
-                  title: ['Crossref Recovered Academic Research Paper'],
+                  title: ['Distributed Consensus in Scalable Network Architectures'],
                   URL: 'https://doi.org/10.1145/3318464.3389700',
                   container_title: ['ACM Transactions on Computer Systems'],
                   issued: { 'date-parts': [[2024]] },
-                  abstract: '<jats:p>Crossref abstract demonstrating authentic scholarly retrieval.</jats:p>',
+                  abstract: '<jats:p>Distributed consensus algorithms evaluate Byzantine fault-tolerance across scalable peer networks.</jats:p>',
                 },
               ],
             },
@@ -122,7 +122,7 @@ describe('Production Reliability: Source Retrieval & 429 Recovery', () => {
       });
 
       assert.ok(result.sources.length > 0, 'Should have retrieved sources via Crossref');
-      assert.equal(result.sources[0].title, 'Crossref Recovered Academic Research Paper');
+      assert.equal(result.sources[0].title, 'Distributed Consensus in Scalable Network Architectures');
       assert.equal(result.sources[0].demo, false, 'Sources must be marked demo=false');
       assert.ok(result.sources[0].url.includes('doi.org'));
       assert.ok(result.claims.length > 0, 'Should have extracted initial claims');

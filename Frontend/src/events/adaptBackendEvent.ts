@@ -171,11 +171,23 @@ export function extractClaim(be: BackendEvent): Claim | undefined {
   const confidence =
     asFiniteNumber(payload.confidence) ?? asFiniteNumber(nested?.confidence)
 
+  const evidenceIds = asStringArray(payload.evidenceIds).length > 0
+    ? asStringArray(payload.evidenceIds)
+    : asStringArray(nested?.evidenceIds)
+
+  let verificationStatus = mapVerificationStatus(be, payload.status ?? nested?.status)
+
+  // Invariant: Only mark a claim supported when relevant retrieved evidence directly supports that claim.
+  // If evidence count or source count is 0, demote to unsupported (insufficient evidence).
+  if (verificationStatus === 'supported' && (evidenceIds.length === 0 || sourceIds.length === 0)) {
+    verificationStatus = 'unsupported'
+  }
+
   const claim: Claim = {
     id,
     text,
-    verificationStatus: mapVerificationStatus(be, payload.status ?? nested?.status),
-    evidenceIds: asStringArray(payload.evidenceIds),
+    verificationStatus,
+    evidenceIds,
     sourceIds,
   }
 

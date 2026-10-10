@@ -11,14 +11,26 @@ import type { Claim, Source } from '@/types'
 // ─────────────────────────────────────────────
 // Verification badge
 // ─────────────────────────────────────────────
-function VerificationBadge({ status }: { status: Claim['verificationStatus'] }) {
+function VerificationBadge({
+  status,
+  evidenceCount = 1,
+  sourceCount = 1,
+}: {
+  status: Claim['verificationStatus']
+  evidenceCount?: number
+  sourceCount?: number
+}) {
+  const effectiveStatus = (status === 'supported' && (evidenceCount === 0 || sourceCount === 0))
+    ? 'unsupported'
+    : status
+
   const map = {
-    pending:     { label: 'PENDING',     bg: '#F5F1E8', color: '#705E35', border: '#D8CFA8' },
-    supported:   { label: 'SUPPORTED',   bg: '#DCFAEB', color: '#1A7A4E', border: '#90D8B0' },
-    conflict:    { label: 'CONFLICT',    bg: '#FFE4E4', color: '#B02020', border: '#F0A0A0' },
-    unsupported: { label: 'UNSUPPORTED', bg: '#FFF0DC', color: '#854400', border: '#F0C880' },
+    pending:     { label: 'UNVERIFIED',            bg: '#F5F1E8', color: '#705E35', border: '#D8CFA8' },
+    supported:   { label: 'SUPPORTED',             bg: '#DCFAEB', color: '#1A7A4E', border: '#90D8B0' },
+    conflict:    { label: 'CONFLICT',              bg: '#FFE4E4', color: '#B02020', border: '#F0A0A0' },
+    unsupported: { label: 'INSUFFICIENT EVIDENCE', bg: '#FFF0DC', color: '#854400', border: '#F0C880' },
   }
-  const s = map[status]
+  const s = map[effectiveStatus]
   return (
     <span style={{
       fontFamily: 'var(--font-mono)',
@@ -196,7 +208,11 @@ function EvidenceView({ claim, sources, onClose }: {
         }}>
           VERIFICATION
         </span>
-        <VerificationBadge status={claim.verificationStatus} />
+        <VerificationBadge
+          status={claim.verificationStatus}
+          evidenceCount={claim.evidenceIds.length}
+          sourceCount={claim.sourceIds.length}
+        />
       </div>
     </div>
   )
@@ -270,7 +286,13 @@ export function ClaimCard() {
           }}>
             CURRENT CLAIM
           </span>
-          {claim && <VerificationBadge status={claim.verificationStatus} />}
+          {claim && (
+            <VerificationBadge
+              status={claim.verificationStatus}
+              evidenceCount={claim.evidenceIds.length}
+              sourceCount={claim.sourceIds.length}
+            />
+          )}
         </div>
 
         {claim ? (

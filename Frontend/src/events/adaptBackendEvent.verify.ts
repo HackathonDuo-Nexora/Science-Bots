@@ -43,6 +43,7 @@ function run() {
       status: 'supported',
       confidence: 0.82,
       sourceIds: ['src_1'],
+      evidenceIds: ['ev_1'],
     },
   }))
   assert(byClaimId?.id === 'clm_abc', 'claimId should be used')
@@ -50,6 +51,21 @@ function run() {
   assert(byClaimId?.verificationStatus === 'supported', 'supported status')
   assert(byClaimId?.confidence === 0.82, 'confidence preserved')
   assert(byClaimId?.sourceIds[0] === 'src_1', 'sourceIds preserved')
+  assert(byClaimId?.evidenceIds[0] === 'ev_1', 'evidenceIds preserved')
+
+  // Zero evidence claim must be demoted to unsupported
+  const zeroEvidence = extractClaim(backendEvent({
+    type: 'claim_verified',
+    message: 'Claim with 0 evidence',
+    payload: {
+      claimId: 'clm_zero_ev',
+      text: 'Claim without supporting evidence.',
+      status: 'supported',
+      sourceIds: ['src_1'],
+      evidenceIds: [],
+    },
+  }))
+  assert(zeroEvidence?.verificationStatus === 'unsupported', 'zero evidence must be demoted to unsupported')
 
   // id form (demo CLAIM_VERIFIED)
   const byId = extractClaim(backendEvent({
@@ -60,10 +76,12 @@ function run() {
       text: '[DEMO] Primary domain impact.',
       status: 'supported',
       sourceIds: ['src_demo_1'],
+      evidenceIds: ['ev_demo_1'],
     },
   }))
   assert(byId?.id === 'clm_demo', 'payload.id should be used')
   assert(byId?.text.startsWith('[DEMO]'), 'demo text preserved')
+  assert(byId?.verificationStatus === 'supported', 'demo supported status')
 
   // duplicate id is the same identifier (store merges; adapter returns same id)
   assert(extractClaim(backendEvent({
