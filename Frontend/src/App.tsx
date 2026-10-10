@@ -67,12 +67,18 @@ function App() {
       },
       () => {
         if (sessionEpochRef.current !== epoch) return
-        setDisconnected()
+        const currentPhase = useScienceBotsStore.getState().phase
+        if (currentPhase !== 'completed' && currentPhase !== 'error') {
+          setDisconnected()
+        }
       },
       (err) => {
         if (sessionEpochRef.current !== epoch) return
         console.error('[App] Backend connection error:', err.message)
-        setDisconnected()
+        const currentPhase = useScienceBotsStore.getState().phase
+        if (currentPhase !== 'completed' && currentPhase !== 'error') {
+          setDisconnected()
+        }
       }
     )
   }

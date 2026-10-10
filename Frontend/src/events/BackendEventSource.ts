@@ -24,11 +24,14 @@ import {
   type BackendSessionSource,
 } from './adaptBackendEvent'
 
-const API_BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000') as string
+const rawBase = (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000') as string
+const API_BASE = rawBase.trim().replace(/\/+$/, '').replace(/\/api$/, '')
 
 export class BackendEventSource implements IEventSource {
   private _es: EventSource | null = null
   private _running = false
+  private _completed = false
+  private _hasError = false
   private _topic: string
   private _researchId: string | null = null
   /** Bumped on every stop() so in-flight POST/SSE/paper work is ignored. */
@@ -63,27 +66,48 @@ export class BackendEventSource implements IEventSource {
     onDisconnect?: DisconnectCallback,
     onError?: ErrorCallback
   ) {
-    let researchId: string
-    try {
-      const res = await fetch(`${API_BASE}/api/research`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: this._topic }),
-      })
+    let researchId: string | null = null
+    let lastErr: Error | null = null
 
-      if (!res.ok) {
-        const body = await res.text()
-        throw new Error(`POST /api/research failed: HTTP ${res.status} — ${body}`)
-      }
-
-      const data = await res.json() as { success: boolean; researchId: string }
-      if (!data.success || !data.researchId) {
-        throw new Error('POST /api/research: unexpected response shape')
-      }
-      researchId = data.researchId
-    } catch (err) {
+    // ── Start research with retry for Render cold boot (502/503/timeout) ───────
+    for (let attempt = 1; attempt <= 3; attempt++) {
       if (this._generation !== generation) return
-      onError?.(err instanceof Error ? err : new Error('Failed to start research session'))
+      try {
+        const res = await fetch(`${API_BASE}/api/research`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic: this._topic }),
+        })
+
+        if (!res.ok) {
+          const body = await res.text().catch(() => '')
+          if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt < 3) {
+            console.warn(`[BackendEventSource] Server returned HTTP ${res.status} (attempt ${attempt}). Retrying in 2.5s...`)
+            await new Promise((r) => setTimeout(r, 2500))
+            continue
+          }
+          throw new Error(`POST /api/research failed: HTTP ${res.status} — ${body}`)
+        }
+
+        const data = await res.json() as { success: boolean; researchId: string }
+        if (!data.success || !data.researchId) {
+          throw new Error('POST /api/research: unexpected response shape')
+        }
+        researchId = data.researchId
+        break
+      } catch (err) {
+        lastErr = err instanceof Error ? err : new Error(String(err))
+        if (attempt < 3 && this._generation === generation) {
+          console.warn(`[BackendEventSource] Connection attempt ${attempt} failed: ${lastErr.message}. Retrying in 2.5s...`)
+          await new Promise((r) => setTimeout(r, 2500))
+          continue
+        }
+      }
+    }
+
+    if (!researchId) {
+      if (this._generation !== generation) return
+      onError?.(lastErr ?? new Error('Failed to start research session'))
       return
     }
 
@@ -114,11 +138,21 @@ export class BackendEventSource implements IEventSource {
 
       this._es.onerror = () => {
         if (this._generation !== generation) return
-        this._running = false
-        onDisconnect?.()
-        onError?.(new Error('SSE connection lost'))
-        this._es?.close()
-        this._es = null
+        if (this._completed || this._hasError) {
+          // Expected close after session completed or error received
+          this._es?.close()
+          this._es = null
+          return
+        }
+
+        // Only notify disconnect if EventSource is truly closed
+        if (this._es?.readyState === EventSource.CLOSED) {
+          this._running = false
+          onDisconnect?.()
+          onError?.(new Error('SSE connection lost'))
+          this._es?.close()
+          this._es = null
+        }
       }
     } catch (err) {
       if (this._generation !== generation) return
@@ -149,6 +183,10 @@ export class BackendEventSource implements IEventSource {
       return
     }
 
+    if (be.type === 'error') {
+      this._hasError = true
+    }
+
     if (be.type === 'paper_completed') {
       try {
         const [paperRes, stateRes] = await Promise.all([
@@ -174,6 +212,7 @@ export class BackendEventSource implements IEventSource {
 
             if (!this.stillCurrent(generation, researchId)) return
 
+            this._completed = true
             const finalPaper: FinalPaper = adaptPaper(paperData.paper, sessionSources)
             const finalEvent: ResearchEvent = {
               id: be.id,
@@ -206,6 +245,8 @@ export class BackendEventSource implements IEventSource {
   stop(): void {
     this._generation += 1
     this._running = false
+    this._completed = false
+    this._hasError = false
     this._researchId = null
     const es = this._es
     this._es = null

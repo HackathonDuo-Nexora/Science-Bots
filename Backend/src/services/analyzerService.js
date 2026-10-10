@@ -244,45 +244,74 @@ ${JSON.stringify(cleanClaims, null, 2)}
 
 Evaluate each claim against the sources according to the grounding rules and return the JSON array.`;
 
-  const url = `${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+function getCandidateModels() {
+  const configured = (process.env.GEMINI_MODEL || '').trim();
+  const defaults = [
+    'gemini-3.1-flash-lite',
+    'gemini-flash-lite-latest',
+    'gemini-3.5-flash-lite',
+    'gemini-3.8-flash',
+    'gemini-3-flash-preview',
+  ];
+  return configured ? [configured, ...defaults.filter((m) => m !== configured)] : defaults;
+}
 
-  try {
-    const res = await fetchWithRetry(
-      url,
-      {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: userPrompt }] }],
-          systemInstruction: { parts: [{ text: systemInstruction }] },
-          generationConfig: {
-            responseMimeType: 'application/json',
-            temperature:      0.1,
-          },
-        }),
-      },
-      2
-    );
+  const candidateModels = getCandidateModels();
+  let lastError = null;
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(`Gemini API HTTP ${res.status}: ${errText.substring(0, 200)}`);
+  for (const model of candidateModels) {
+    const url = `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`;
+
+    try {
+      const res = await fetchWithRetry(
+        url,
+        {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: userPrompt }] }],
+            systemInstruction: { parts: [{ text: systemInstruction }] },
+            generationConfig: {
+              responseMimeType: 'application/json',
+              temperature:      0.1,
+            },
+          }),
+        },
+        1
+      );
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        const isTransientOrQuota = res.status === 429 || res.status === 404 || res.status === 503 || res.status === 500;
+        if (isTransientOrQuota && candidateModels.indexOf(model) < candidateModels.length - 1) {
+          console.warn(`[AnalyzerService] Model ${model} returned HTTP ${res.status}. Attempting fallback candidate model...`);
+          lastError = new Error(`Gemini API HTTP ${res.status}: ${errText.substring(0, 200)}`);
+          continue;
+        }
+        throw new Error(`Gemini API HTTP ${res.status}: ${errText.substring(0, 200)}`);
+      }
+
+      const data = await res.json();
+      const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (!rawContent) {
+        throw new Error('Gemini response candidate content was empty.');
+      }
+
+      const parsed = JSON.parse(rawContent);
+      return validateAndRepairResults(parsed, claims, sources);
+    } catch (err) {
+      lastError = err;
+      if (candidateModels.indexOf(model) < candidateModels.length - 1) {
+        console.warn(`[AnalyzerService] Model ${model} failed: ${sanitizeErrorMessage(err.message, apiKey)}. Trying next candidate model...`);
+        continue;
+      }
     }
-
-    const data = await res.json();
-    const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!rawContent) {
-      throw new Error('Gemini response candidate content was empty.');
-    }
-
-    const parsed = JSON.parse(rawContent);
-    return validateAndRepairResults(parsed, claims, sources);
-  } catch (err) {
-    const cleanMsg = sanitizeErrorMessage(err.message, apiKey);
-    console.error(`[AnalyzerService] Real Gemini analysis failed: ${cleanMsg}`);
-    throw new Error(`Gemini Analyzer failed: ${cleanMsg}`);
   }
+
+  const cleanMsg = sanitizeErrorMessage(lastError?.message || 'All candidate Gemini models failed', apiKey);
+  console.error(`[AnalyzerService] Real Gemini analysis failed: ${cleanMsg}`);
+  throw new Error(`Gemini Analyzer failed: ${cleanMsg}`);
 }
 
 export { validateAndRepairResults, sanitizeErrorMessage, fallbackHeuristicEvaluation };

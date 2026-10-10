@@ -103,9 +103,9 @@ export function streamEvents(req, res) {
 
   // ── SSE headers ────────────────────────────────────────────────────────────
   res.setHeader('Content-Type',                'text/event-stream');
-  res.setHeader('Cache-Control',               'no-cache');
+  res.setHeader('Cache-Control',               'no-cache, no-transform');
   res.setHeader('Connection',                  'keep-alive');
-  res.setHeader('X-Accel-Buffering',           'no'); // disable nginx buffering
+  res.setHeader('X-Accel-Buffering',           'no'); // disable nginx/proxy buffering
   res.flushHeaders();
 
   // ── Subscribe ──────────────────────────────────────────────────────────────
@@ -127,7 +127,7 @@ export function streamEvents(req, res) {
     } catch {
       clearInterval(heartbeat);
     }
-  }, 25_000);
+  }, 15_000);
 
   // ── Cleanup on disconnect ──────────────────────────────────────────────────
   req.on('close', () => {

@@ -314,7 +314,7 @@ export const useScienceBotsStore = create<ScienceBotsStore>((set, get) => ({
   // ── setDisconnected ───────────────────────
   setDisconnected: () => {
     const phase = get().phase
-    if (phase === 'completed' || phase === 'start') return
+    if (phase === 'completed' || phase === 'start' || phase === 'error') return
     set({ phase: 'disconnected' })
   },
 
