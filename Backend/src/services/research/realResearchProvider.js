@@ -197,29 +197,50 @@ function extractClaims(sources, topic, pass = 'initial') {
 }
 
 /**
- * Fetch OpenAlex with automatic retry for transient errors (429, 500, 503) and 25s timeout.
+ * Fetch OpenAlex with automatic retry for transient errors (429, 500, 503),
+ * respecting Retry-After headers, bounded exponential backoff with jitter, and 20s timeout.
  */
-async function fetchWithRetry(url, options, maxRetries = 2) {
+export async function fetchOpenAlexWithRetry(url, options, maxRetries = 2) {
   for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
     try {
       const res = await fetch(url, { ...options, signal: controller.signal });
       clearTimeout(timeoutId);
+
       if ((res.status === 429 || res.status === 500 || res.status === 503) && attempt <= maxRetries) {
-        console.warn(`[RealResearchProvider] OpenAlex returned HTTP ${res.status} (attempt ${attempt}). Retrying in 2s...`);
-        await new Promise((r) => setTimeout(r, 2000 * attempt));
+        let delayMs = 0;
+        const retryAfter = res.headers.get('retry-after') || res.headers.get('Retry-After');
+        if (retryAfter) {
+          const parsed = parseInt(retryAfter, 10);
+          if (!isNaN(parsed) && parsed > 0) {
+            delayMs = Math.min(parsed * 1000, 8000);
+          }
+        }
+        if (!delayMs) {
+          const base = 1500 * Math.pow(2, attempt - 1);
+          const jitter = Math.random() * 400;
+          delayMs = Math.min(base + jitter, 8000);
+        }
+
+        console.warn(`[RealResearchProvider] OpenAlex returned HTTP ${res.status} (attempt ${attempt}). Retrying in ${Math.round(delayMs)}ms...`);
+        await new Promise((r) => setTimeout(r, delayMs));
         continue;
       }
       return res;
     } catch (err) {
       clearTimeout(timeoutId);
       if (err.name === 'AbortError') {
-        throw new Error('OpenAlex search request timed out after 25s.');
+        if (attempt <= maxRetries) {
+          console.warn(`[RealResearchProvider] OpenAlex timed out (attempt ${attempt}). Retrying...`);
+          await new Promise((r) => setTimeout(r, 1500));
+          continue;
+        }
+        throw new Error('OpenAlex search request timed out after 20s.');
       }
       if (attempt <= maxRetries) {
-        console.warn(`[RealResearchProvider] Network error (attempt ${attempt}): ${err.message}. Retrying in 2s...`);
-        await new Promise((r) => setTimeout(r, 2000 * attempt));
+        console.warn(`[RealResearchProvider] Network error (attempt ${attempt}): ${err.message}. Retrying...`);
+        await new Promise((r) => setTimeout(r, 1500 * attempt));
         continue;
       }
       throw err;
@@ -227,33 +248,18 @@ async function fetchWithRetry(url, options, maxRetries = 2) {
   }
 }
 
-// ─── Main Provider Interface ──────────────────────────────────────────────────
-
 /**
- * Real research provider using OpenAlex scholarly API.
- *
- * @param {object}   opts
- * @param {string}   opts.topic           - Research topic
- * @param {object[]} opts.existingSources - Already collected sources (for dedup)
- * @param {string}   opts.pass            - 'initial' | 'supplementary'
- * @returns {Promise<{ sources: object[], claims: object[] }>}
+ * Retrieve scholarly works from OpenAlex.
  */
-export async function search({ topic, existingSources = [], pass = 'initial' }) {
-  if (!topic || typeof topic !== 'string' || !topic.trim()) {
-    throw new Error('Research topic must be a non-empty string.');
-  }
-
+export async function searchOpenAlex({ topic, existingSources = [], pass = 'initial', targetCount = 6 }) {
   const cleanTopic = topic.trim();
-
-  // Target 5-6 sources on initial pass, 1-2 on supplementary pass
-  const targetCount = pass === 'supplementary' ? 2 : 6;
   const searchQuery = pass === 'supplementary'
     ? `${cleanTopic} empirical evidence analysis`
     : cleanTopic;
 
   const url = new URL('https://api.openalex.org/works');
   url.searchParams.set('search', searchQuery);
-  url.searchParams.set('per_page', '12'); // fetch extra for deduplication margin
+  url.searchParams.set('per_page', String(targetCount * 2));
 
   if (process.env.OPENALEX_API_KEY) {
     url.searchParams.set('api_key', process.env.OPENALEX_API_KEY);
@@ -262,7 +268,7 @@ export async function search({ topic, existingSources = [], pass = 'initial' }) 
   const contactEmail = process.env.RESEARCH_CONTACT_EMAIL || 'research@sciencebots.org';
   url.searchParams.set('mailto', contactEmail);
 
-  const res = await fetchWithRetry(url.toString(), {
+  const res = await fetchOpenAlexWithRetry(url.toString(), {
     headers: {
       'User-Agent': `ScienceBots-ResearchAgent/1.0 (mailto:${contactEmail})`,
       'Accept':     'application/json',
@@ -274,12 +280,9 @@ export async function search({ topic, existingSources = [], pass = 'initial' }) 
   }
 
   const data = await res.json();
-
-  // Populate seen URLs set from existing sources to prevent duplicates
   const seenUrls = new Set(
     (existingSources || []).map((s) => normalizeUrl(s.url).toLowerCase())
   );
-
   const sources = [];
 
   for (const item of data.results || []) {
@@ -294,12 +297,11 @@ export async function search({ topic, existingSources = [], pass = 'initial' }) 
 
     const normUrl = normalizeUrl(rawUrl);
     const normKey = normUrl.toLowerCase();
-
     if (seenUrls.has(normKey)) continue;
     seenUrls.add(normKey);
 
     const domain = extractDomain(normUrl);
-    let snippet  = reconstructAbstract(item.abstract_inverted_index);
+    let snippet = reconstructAbstract(item.abstract_inverted_index);
 
     if (!snippet) {
       const venue = item.primary_location?.source?.display_name || 'Academic literature';
@@ -326,8 +328,172 @@ export async function search({ topic, existingSources = [], pass = 'initial' }) 
     });
   }
 
-  // Extract pending claims referencing these sources
   const claims = extractClaims(sources, cleanTopic, pass);
-
   return { sources, claims };
+}
+
+/**
+ * Legitimate alternative scholarly works provider using Crossref's official API.
+ * Used when OpenAlex encounters rate limits or service disruptions.
+ */
+export async function searchCrossref({ topic, existingSources = [], pass = 'initial', targetCount = 6 }) {
+  const cleanTopic = topic.trim();
+  const searchQuery = pass === 'supplementary'
+    ? `${cleanTopic} empirical research findings`
+    : cleanTopic;
+
+  const contactEmail = process.env.RESEARCH_CONTACT_EMAIL || 'research@sciencebots.org';
+  const url = `https://api.crossref.org/works?query=${encodeURIComponent(searchQuery)}&rows=${targetCount * 2}&mailto=${encodeURIComponent(contactEmail)}`;
+
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': `ScienceBots-ResearchAgent/1.0 (mailto:${contactEmail})`,
+      'Accept':     'application/json',
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Crossref API HTTP ${res.status}: ${res.statusText}`);
+  }
+
+  const data = await res.json();
+  const items = data.message?.items || [];
+  const seenUrls = new Set(
+    (existingSources || []).map((s) => normalizeUrl(s.url).toLowerCase())
+  );
+  const sources = [];
+
+  for (const item of items) {
+    if (sources.length >= targetCount) break;
+
+    const title = item.title?.[0];
+    if (!title || typeof title !== 'string' || title.trim().length < 5) continue;
+
+    const rawUrl = item.DOI ? `https://doi.org/${item.DOI}` : item.URL;
+    if (!rawUrl) continue;
+
+    const normUrl = normalizeUrl(rawUrl);
+    const normKey = normUrl.toLowerCase();
+    if (seenUrls.has(normKey)) continue;
+    seenUrls.add(normKey);
+
+    const domain = extractDomain(normUrl);
+    let snippet = '';
+    if (item.abstract) {
+      snippet = String(item.abstract)
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    if (!snippet) {
+      const container = item['container-title']?.[0] || 'Peer-reviewed scholarly literature';
+      const year = item.published?.['date-parts']?.[0]?.[0] || item.created?.['date-parts']?.[0]?.[0] || 'Recent';
+      snippet = `${title}. Published in ${container} (${year}).`;
+    }
+
+    if (snippet.length > 300) {
+      snippet = `${snippet.substring(0, 297)}...`;
+    }
+
+    const sourceType = determineSourceType(item, domain);
+    const relevance  = calculateRelevance(cleanTopic, title, snippet);
+
+    sources.push({
+      id:         `src_${crypto.randomUUID().replace(/-/g, '')}`,
+      title,
+      url:        normUrl,
+      domain:     domain || 'doi.org',
+      snippet,
+      sourceType,
+      relevance,
+      demo:       false,
+    });
+  }
+
+  const claims = extractClaims(sources, cleanTopic, pass);
+  return { sources, claims };
+}
+
+// In-flight query deduplication to prevent duplicate concurrent queries
+const inflightSearches = new Map();
+
+// ─── Main Provider Interface ──────────────────────────────────────────────────
+
+/**
+ * Real research provider querying OpenAlex with automatic fallback to Crossref.
+ *
+ * @param {object}   opts
+ * @param {string}   opts.topic           - Research topic
+ * @param {object[]} opts.existingSources - Already collected sources (for dedup)
+ * @param {string}   opts.pass            - 'initial' | 'supplementary'
+ * @returns {Promise<{ sources: object[], claims: object[] }>}
+ */
+export async function search({ topic, existingSources = [], pass = 'initial' }) {
+  if (!topic || typeof topic !== 'string' || !topic.trim()) {
+    throw new Error('Research topic must be a non-empty string.');
+  }
+
+  const cleanTopic = topic.trim();
+  const targetCount = pass === 'supplementary' ? 2 : 6;
+  const inflightKey = `${cleanTopic}::${pass}::${(existingSources || []).length}`;
+
+  if (inflightSearches.has(inflightKey)) {
+    return inflightSearches.get(inflightKey);
+  }
+
+  const execute = async () => {
+    let openAlexErr = null;
+
+    // 1. Primary: Try OpenAlex scholarly API
+    try {
+      const result = await searchOpenAlex({
+        topic: cleanTopic,
+        existingSources,
+        pass,
+        targetCount,
+      });
+
+      if (result.sources.length > 0) {
+        return result;
+      }
+    } catch (err) {
+      openAlexErr = err;
+      console.warn(`[RealResearchProvider] OpenAlex search failed: ${err.message}. Trying Crossref fallback...`);
+    }
+
+    // 2. Secondary: If OpenAlex rate-limited (HTTP 429) or failed, fall back to Crossref
+    try {
+      const crossrefResult = await searchCrossref({
+        topic: cleanTopic,
+        existingSources,
+        pass,
+        targetCount,
+      });
+
+      if (crossrefResult.sources.length > 0) {
+        console.log(`[RealResearchProvider] Crossref successfully retrieved ${crossrefResult.sources.length} scholarly sources for "${cleanTopic}".`);
+        return crossrefResult;
+      }
+    } catch (crossrefErr) {
+      console.warn(`[RealResearchProvider] Crossref search failed: ${crossrefErr.message}.`);
+      if (openAlexErr) {
+        throw new Error(`Real research providers failed: OpenAlex (${openAlexErr.message}) & Crossref (${crossrefErr.message})`);
+      }
+      throw crossrefErr;
+    }
+
+    if (openAlexErr) {
+      throw openAlexErr;
+    }
+
+    return { sources: [], claims: [] };
+  };
+
+  const promise = execute().finally(() => {
+    inflightSearches.delete(inflightKey);
+  });
+
+  inflightSearches.set(inflightKey, promise);
+  return promise;
 }
