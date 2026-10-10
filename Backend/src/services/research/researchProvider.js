@@ -60,13 +60,14 @@ export async function search(opts) {
   const mode = getResearchMode();
 
   if (mode === 'demo') {
-    return demoSearch(opts);
+    const result = await demoSearch(opts);
+    return { ...result, usedFallback: false, mode: 'demo' };
   }
 
   if (mode === 'real') {
     try {
       const result = await realSearch(opts);
-      return { ...result, usedFallback: false };
+      return { ...result, usedFallback: false, mode: 'real' };
     } catch (err) {
       console.warn(`[ResearchProvider] Real search provider failed: ${err.message}`);
 
@@ -74,19 +75,37 @@ export async function search(opts) {
         console.warn('[ResearchProvider] RESEARCH_FALLBACK_TO_DEMO=true — falling back safely to demo provider.');
         try {
           const fallback = await demoSearch(opts);
-          return { ...fallback, usedFallback: true };
+          return {
+            ...fallback,
+            usedFallback: true,
+            mode: 'demo',
+            fallbackReason: err.message,
+          };
         } catch (fallbackErr) {
           console.error(`[ResearchProvider] Fallback provider also failed: ${fallbackErr.message}`);
-          return { sources: [], claims: [], usedFallback: true };
+          return {
+            sources: [],
+            claims: [],
+            usedFallback: true,
+            mode: 'demo',
+            error: fallbackErr.message,
+          };
         }
       }
 
       console.warn('[ResearchProvider] RESEARCH_FALLBACK_TO_DEMO=false — returning empty results.');
-      return { sources: [], claims: [], usedFallback: false };
+      return {
+        sources: [],
+        claims: [],
+        usedFallback: false,
+        mode: 'real',
+        error: err.message,
+      };
     }
   }
 
   // Unrecognised mode — warn and use demo
   console.warn(`[ResearchProvider] Unknown RESEARCH_MODE "${mode}" — defaulting to demo.`);
-  return demoSearch(opts);
+  const fallback = await demoSearch(opts);
+  return { ...fallback, usedFallback: false, mode: 'demo' };
 }

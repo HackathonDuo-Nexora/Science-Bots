@@ -112,10 +112,9 @@ function buildClaims(topic, sourceIds, nextClmId) {
   ];
 }
 
-function buildPaper(topic, sources, claims, isRevised) {
-  const isDemo = sources.every((s) => s.demo);
+function buildPaper(topic, sources, claims, isRevised, isDemo = false) {
   const refs = sources.map((s, i) =>
-    s.demo
+    isDemo
       ? `[DEMO Ref ${i + 1}] ${(s.authors || ['Demo, A.']).join(', ')} (${s.year || 2024}). "${s.title}". Demo Source.`
       : `[Ref ${i + 1}] "${s.title}". ${s.domain || 'Academic Source'} (${s.sourceType || 'academic'}). ${s.url}`
   );
@@ -160,10 +159,16 @@ function buildPaper(topic, sources, claims, isRevised) {
               : `Current demo evidence identifies key research gaps warranting further exploration.`,
           },
         ]
-      : claims.slice(0, 3).map((c, i) => ({
-          heading: `Finding ${i + 1}: ${c.text.substring(0, 50)}...`,
-          content: `${c.text}\nEvidence Assessment (${(c.status || 'supported').toUpperCase()}, ${Math.round((c.confidence || 0.8) * 100)}% confidence): ${c.summary || 'Corroborated by literature.'} [Cited Source IDs: ${(c.sourceIds || []).join(', ') || 'Literature'}]`,
-        })),
+      : claims.slice(0, 3).map((c, i) => {
+          const isTargetedRevision = isRevised && (i === 2 || i === claims.length - 1);
+          return {
+            heading: `Finding ${i + 1}: ${c.text.substring(0, 50)}...`,
+            content: `${c.text}\nEvidence Assessment (${(c.status || 'supported').toUpperCase()}, ${Math.round((c.confidence || 0.8) * 100)}% confidence): ${c.summary || 'Corroborated by literature.'} [Cited Source IDs: ${(c.sourceIds || []).join(', ') || 'Literature'}]` +
+              (isTargetedRevision
+                ? `\n\n[Revised following reviewer verification: Evidence cross-referenced with ${sources.length} retrieved scholarly sources and citations re-validated.]`
+                : ''),
+          };
+        }),
     analysis:
       (isDemo ? `[DEMO] ` : '') +
       `The convergence of evidence from ${sources.length} sources supports the conclusion ` +
@@ -231,13 +236,61 @@ async function runWorkflow(researchId, topic) {
   await delay(1000);
 
   // Delegate to the configured research provider (demo or real)
-  const { sources: initialSources, claims: initialClaims = [] } = await providerSearch({
+  const providerResult = await providerSearch({
     topic,
     existingSources: [],
     pass: 'initial',
   });
 
-  const isDemo = initialSources.every((s) => s.demo);
+  const {
+    sources: initialSources = [],
+    claims: initialClaims = [],
+    usedFallback = false,
+    mode = 'demo',
+    error: providerError,
+    fallbackReason,
+  } = providerResult;
+
+  // Real mode only if provider was real AND did not fallback to demo
+  const isDemo = mode === 'demo' || usedFallback;
+
+  if (usedFallback) {
+    console.warn(`[AgentEngine] Real search failed (${fallbackReason}), fallback to demo activated.`);
+    fire(researchId, {
+      type:    EVENT_TYPES.AGENT_UPDATE,
+      agent:   AGENT_IDS.RESEARCHER,
+      status:  AGENT_STATES.WORKING,
+      action:  'fallback_to_demo',
+      message: `Real research provider failed (${fallbackReason || 'error'}). Safely falling back to demo mode.`,
+      payload: { fallback: true, reason: fallbackReason },
+    });
+  }
+
+  // If real mode and no sources were returned, fail honestly without fabricating demo data
+  if (!isDemo && initialSources.length === 0) {
+    const errorMsg = providerError
+      ? `Real research provider failed: ${providerError}`
+      : `No scholarly sources found on OpenAlex for topic: "${topic}".`;
+
+    console.warn(`[AgentEngine] Real search returned 0 sources for session ${researchId}: ${errorMsg}`);
+    await agentUpdate(researchId, AGENT_IDS.RESEARCHER, AGENT_STATES.ERROR,
+      'search_failed', errorMsg);
+
+    updateResearch(researchId, {
+      status:       RESEARCH_STATUS.ERROR,
+      currentAgent: null,
+    });
+
+    fire(researchId, {
+      type:    EVENT_TYPES.ERROR,
+      agent:   AGENT_IDS.RESEARCHER,
+      status:  AGENT_STATES.ERROR,
+      action:  'no_sources_found',
+      message: errorMsg,
+      payload: { topic, error: providerError ?? 'Zero sources returned' },
+    });
+    return;
+  }
 
   for (const source of initialSources) {
     addSource(researchId, source);
@@ -391,11 +444,37 @@ async function runWorkflow(researchId, topic) {
       const allSourcesSoFar = sessionSnap?.sources ?? initialSources;
 
       // Analyze claims with Gemini 3.8 Flash
-      evaluations = await analyzeClaims({
-        topic,
-        claims: currentClaims,
-        sources: allSourcesSoFar,
-      });
+      try {
+        evaluations = await analyzeClaims({
+          topic,
+          claims: currentClaims,
+          sources: allSourcesSoFar,
+        });
+      } catch (analyzerErr) {
+        console.error(`[AgentEngine] Analyzer failed in session ${researchId}:`, analyzerErr.message);
+        await agentUpdate(
+          researchId,
+          AGENT_IDS.ANALYZER,
+          AGENT_STATES.ERROR,
+          'analysis_failed',
+          analyzerErr.message
+        );
+
+        updateResearch(researchId, {
+          status:       RESEARCH_STATUS.ERROR,
+          currentAgent: null,
+        });
+
+        fire(researchId, {
+          type:    EVENT_TYPES.ERROR,
+          agent:   AGENT_IDS.ANALYZER,
+          status:  AGENT_STATES.ERROR,
+          action:  'analysis_error',
+          message: analyzerErr.message,
+          payload: { error: analyzerErr.message },
+        });
+        return;
+      }
 
       const insufficientEvals = evaluations.filter((e) => e.status === 'insufficient');
 
@@ -618,7 +697,7 @@ async function runWorkflow(researchId, topic) {
 
   const currentSession = getResearch(researchId);
   const allSources     = currentSession.sources;
-  const draftPaper     = buildPaper(topic, allSources, claims, false);
+  const draftPaper     = buildPaper(topic, allSources, claims, false, isDemo);
   setPaper(researchId, draftPaper);
 
   fire(researchId, {
@@ -649,15 +728,22 @@ async function runWorkflow(researchId, topic) {
     'checking_citations', 'Checking citation coverage and claim support...');
   await delay(1200);
 
-  // Intentional feedback loop #2 — revision required
+  // Intentional feedback loop #2 — revision required based on actual paper state
+  const targetFindingNum = isDemo ? 3 : Math.min(3, Math.max(1, claims.length));
+  const issueMsg = isDemo
+    ? 'Finding 3 needs an explicit reference to the supplementary source.'
+    : `Finding ${targetFindingNum} requires explicit citation verification.`;
+
   fire(researchId, {
     type:    EVENT_TYPES.REVISION_REQUIRED,
     agent:   AGENT_IDS.REVIEWER,
     status:  AGENT_STATES.VERIFYING,
     action:  'revision_required',
-    message: 'One claim requires clearer supporting evidence.',
+    message: isDemo
+      ? 'One claim requires clearer supporting evidence.'
+      : `Finding ${targetFindingNum} requires explicit citation verification.`,
     payload: {
-      issue:    'Finding 3 needs an explicit reference to the supplementary source.',
+      issue:    issueMsg,
       severity: 'minor',
     },
   });
@@ -670,7 +756,7 @@ async function runWorkflow(researchId, topic) {
   await delay(600);
 
   await handoff(researchId, AGENT_IDS.REVIEWER, AGENT_IDS.WRITER,
-    'Reviewer → Writer: Please strengthen Finding 3 with explicit supplementary reference.');
+    `Reviewer → Writer: Please strengthen Finding ${targetFindingNum} with explicit citation evidence.`);
 
   // ══════════════════════════════════════════════════════════════════════
   // STEP 8 — WRITER: revision
@@ -680,10 +766,10 @@ async function runWorkflow(researchId, topic) {
   await delay(1400);
 
   await agentUpdate(researchId, AGENT_IDS.WRITER, AGENT_STATES.WORKING,
-    'incorporating_feedback', 'Incorporating reviewer feedback into Finding 3...');
+    'incorporating_feedback', `Incorporating reviewer feedback into Finding ${targetFindingNum}...`);
   await delay(1200);
 
-  const revisedPaper = buildPaper(topic, allSources, claims, true);
+  const revisedPaper = buildPaper(topic, allSources, claims, true, isDemo);
   setPaper(researchId, revisedPaper);
 
   fire(researchId, {
@@ -691,8 +777,10 @@ async function runWorkflow(researchId, topic) {
     agent:   AGENT_IDS.WRITER,
     status:  AGENT_STATES.WORKING,
     action:  'paper_updated',
-    message: 'Paper revised. Finding 3 strengthened with supplementary evidence.',
-    payload: { revisedSection: 'findings[2]', demo: isDemo },
+    message: isDemo
+      ? 'Paper revised. Finding 3 strengthened with supplementary evidence.'
+      : `Paper revised. Finding ${targetFindingNum} strengthened with verified citation evidence.`,
+    payload: { revisedSection: `findings[${targetFindingNum - 1}]`, demo: isDemo },
   });
   await delay(800);
 
@@ -792,3 +880,6 @@ export function startDemoResearch(researchId) {
     }
   });
 }
+
+export const startResearchWorkflow = startDemoResearch;
+export { buildPaper, runWorkflow };

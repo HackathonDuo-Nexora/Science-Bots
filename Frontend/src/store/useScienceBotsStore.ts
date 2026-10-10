@@ -23,6 +23,7 @@ import type {
   RouteId,
 } from '@/types'
 import { AGENT_IDS, getRouteId } from '@/types'
+import { computeMissionProgress } from '@/missionProgress'
 
 // ─────────────────────────────────────────────
 // Store shape
@@ -118,6 +119,24 @@ const MAX_EVENTS = 50
 const ROUTE_ACTIVE_MS = 3500
 
 let _handoffSeq = 0
+let _routeTimers: ReturnType<typeof setTimeout>[] = []
+
+function clearRouteTimers() {
+  for (const timer of _routeTimers) clearTimeout(timer)
+  _routeTimers = []
+}
+
+function mergeClaim(existing: Claim, incoming: Claim): Claim {
+  return {
+    ...existing,
+    ...incoming,
+    text: incoming.text.trim() ? incoming.text : existing.text,
+    sourceIds: incoming.sourceIds.length > 0 ? incoming.sourceIds : existing.sourceIds,
+    evidenceIds: incoming.evidenceIds.length > 0 ? incoming.evidenceIds : existing.evidenceIds,
+    confidence: incoming.confidence ?? existing.confidence,
+    conflictingSourceIds: incoming.conflictingSourceIds ?? existing.conflictingSourceIds,
+  }
+}
 
 // ─────────────────────────────────────────────
 // Store
@@ -140,6 +159,7 @@ export const useScienceBotsStore = create<ScienceBotsStore>((set, get) => ({
 
   // ── startMission ──────────────────────────
   startMission: (topic, demo = false) => {
+    clearRouteTimers()
     set({
       phase: 'loading',
       topic,
@@ -154,23 +174,32 @@ export const useScienceBotsStore = create<ScienceBotsStore>((set, get) => ({
       finalPaper: null,
       showPaperViewer: false,
     })
-    // Transition to active after a brief loading moment
-    setTimeout(() => set({ phase: 'active' }), 1200)
   },
 
   // ── dispatch ──────────────────────────────
   dispatch: (event) => {
     const store = get()
+    const phase = store.phase
+
+    // Ignore events after reset or terminal connection failure
+    if (phase === 'start' || phase === 'disconnected') return
+    if (phase === 'error' && event.type !== 'error') return
+
+    if (event.type === 'error') {
+      set({ phase: 'error' })
+    } else if (phase === 'loading') {
+      set({ phase: 'active' })
+    }
 
     // 1. Append to event log (newest first, cap at MAX_EVENTS)
     set((s) => ({
       events: [event, ...s.events].slice(0, MAX_EVENTS),
     }))
 
-    // 2. Update progress if provided
-    if (event.payload?.progress !== undefined) {
-      set({ progress: event.payload.progress })
-    }
+    // 2. Advance progress from workflow milestones (never 100% without paper)
+    set((s) => ({
+      progress: computeMissionProgress(s.progress, event),
+    }))
 
     // 3. Update agent state
     if (event.agent && event.status) {
@@ -223,7 +252,7 @@ export const useScienceBotsStore = create<ScienceBotsStore>((set, get) => ({
         const exists = s.claims.find((c) => c.id === incoming.id)
         return {
           claims: exists
-            ? s.claims.map((c) => (c.id === incoming.id ? incoming : c))
+            ? s.claims.map((c) => (c.id === incoming.id ? mergeClaim(c, incoming) : c))
             : [...s.claims, incoming],
         }
       })
@@ -236,7 +265,7 @@ export const useScienceBotsStore = create<ScienceBotsStore>((set, get) => ({
 
     // 7. Final paper
     if (event.type === 'paper_final' && event.payload?.paper) {
-      set({ finalPaper: event.payload.paper, phase: 'completed' })
+      set({ finalPaper: event.payload.paper, phase: 'completed', progress: 100 })
     }
 
     // 8. Error
@@ -252,11 +281,13 @@ export const useScienceBotsStore = create<ScienceBotsStore>((set, get) => ({
         ? s.activeRoutes
         : [...s.activeRoutes, routeId],
     }))
-    setTimeout(() => {
+    const timer = setTimeout(() => {
+      _routeTimers = _routeTimers.filter((t) => t !== timer)
       set((s) => ({
         activeRoutes: s.activeRoutes.filter((r) => r !== routeId),
       }))
     }, durationMs)
+    _routeTimers.push(timer)
   },
 
   // ── addHandoff ────────────────────────────
@@ -281,10 +312,15 @@ export const useScienceBotsStore = create<ScienceBotsStore>((set, get) => ({
   setShowPaperViewer: (show) => set({ showPaperViewer: show }),
 
   // ── setDisconnected ───────────────────────
-  setDisconnected: () => set({ phase: 'disconnected' }),
+  setDisconnected: () => {
+    const phase = get().phase
+    if (phase === 'completed' || phase === 'start') return
+    set({ phase: 'disconnected' })
+  },
 
   // ── reset ─────────────────────────────────
-  reset: () =>
+  reset: () => {
+    clearRouteTimers()
     set({
       phase: 'start',
       topic: '',
@@ -298,7 +334,8 @@ export const useScienceBotsStore = create<ScienceBotsStore>((set, get) => ({
       selectedClaimId: null,
       finalPaper: null,
       showPaperViewer: false,
-    }),
+    })
+  },
 }))
 
 // ─────────────────────────────────────────────

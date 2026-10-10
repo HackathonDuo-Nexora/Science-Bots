@@ -20,10 +20,10 @@ export function MissionPill() {
     `${progress}%`
 
   const phaseColor =
-    phase === 'completed'    ? 'var(--green)' :
-    phase === 'error'        ? 'var(--red)' :
-    phase === 'disconnected' ? 'var(--amber)' :
-    'var(--blue)'
+    phase === 'completed'    ? 'var(--state-green)' :
+    phase === 'error'        ? 'var(--state-red)' :
+    phase === 'disconnected' ? 'var(--state-amber)' :
+    'var(--accent)'
 
   return (
     <div style={{
@@ -46,7 +46,7 @@ export function MissionPill() {
           borderRadius: '50%',
           background: phaseColor,
           flexShrink: 0,
-          boxShadow: phase === 'active' ? `0 0 6px ${phaseColor}` : 'none',
+          boxShadow: phase === 'active' ? `0 0 7px ${phaseColor}` : 'none',
         }} />
 
         {/* Topic */}

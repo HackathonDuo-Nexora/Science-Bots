@@ -5,9 +5,10 @@
 
 import { useScienceBotsStore } from '@/store/useScienceBotsStore'
 
-export function StatusOverlay() {
+export function StatusOverlay({ onReset }: { onReset?: () => void }) {
   const phase = useScienceBotsStore((s) => s.phase)
-  const reset = useScienceBotsStore((s) => s.reset)
+  const resetStore = useScienceBotsStore((s) => s.reset)
+  const reset = onReset ?? resetStore
 
   if (phase === 'loading') {
     return (

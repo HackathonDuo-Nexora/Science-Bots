@@ -196,6 +196,37 @@ function extractClaims(sources, topic, pass = 'initial') {
   return claims;
 }
 
+/**
+ * Fetch OpenAlex with automatic retry for transient errors (429, 500, 503) and 25s timeout.
+ */
+async function fetchWithRetry(url, options, maxRetries = 2) {
+  for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    try {
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(timeoutId);
+      if ((res.status === 429 || res.status === 500 || res.status === 503) && attempt <= maxRetries) {
+        console.warn(`[RealResearchProvider] OpenAlex returned HTTP ${res.status} (attempt ${attempt}). Retrying in 2s...`);
+        await new Promise((r) => setTimeout(r, 2000 * attempt));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') {
+        throw new Error('OpenAlex search request timed out after 25s.');
+      }
+      if (attempt <= maxRetries) {
+        console.warn(`[RealResearchProvider] Network error (attempt ${attempt}): ${err.message}. Retrying in 2s...`);
+        await new Promise((r) => setTimeout(r, 2000 * attempt));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 // ─── Main Provider Interface ──────────────────────────────────────────────────
 
 /**
@@ -229,32 +260,20 @@ export async function search({ topic, existingSources = [], pass = 'initial' }) 
   }
 
   const contactEmail = process.env.RESEARCH_CONTACT_EMAIL || 'research@sciencebots.org';
-  const controller   = new AbortController();
-  const timeoutId    = setTimeout(() => controller.abort(), 25000);
+  url.searchParams.set('mailto', contactEmail);
 
-  let data;
-  try {
-    const res = await fetch(url.toString(), {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': `ScienceBots-ResearchAgent/1.0 (mailto:${contactEmail})`,
-        'Accept':     'application/json',
-      },
-    });
+  const res = await fetchWithRetry(url.toString(), {
+    headers: {
+      'User-Agent': `ScienceBots-ResearchAgent/1.0 (mailto:${contactEmail})`,
+      'Accept':     'application/json',
+    },
+  });
 
-    if (!res.ok) {
-      throw new Error(`OpenAlex API HTTP ${res.status}: ${res.statusText}`);
-    }
-
-    data = await res.json();
-  } catch (err) {
-    if (err.name === 'AbortError') {
-      throw new Error('OpenAlex search request timed out after 25s.');
-    }
-    throw err;
-  } finally {
-    clearTimeout(timeoutId);
+  if (!res.ok) {
+    throw new Error(`OpenAlex API HTTP ${res.status}: ${res.statusText}`);
   }
+
+  const data = await res.json();
 
   // Populate seen URLs set from existing sources to prevent duplicates
   const seenUrls = new Set(

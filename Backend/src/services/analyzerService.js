@@ -12,8 +12,21 @@
  *   Outside knowledge and hallucinated citations are strictly prohibited.
  */
 
-const GEMINI_MODEL = 'gemini-3.8-flash';
+const GEMINI_MODEL = (process.env.GEMINI_MODEL || 'gemini-3.8-flash').trim();
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+
+/**
+ * Remove any API keys or secrets from error messages before logging or throwing.
+ */
+function sanitizeErrorMessage(msg, apiKey) {
+  if (!msg || typeof msg !== 'string') return 'Unknown error';
+  let clean = msg;
+  if (apiKey) {
+    clean = clean.replaceAll(apiKey, '[REDACTED]');
+  }
+  clean = clean.replace(/key=[a-zA-Z0-9_\-]+/g, 'key=[REDACTED]');
+  return clean;
+}
 
 /**
  * Fetch with automatic retry for transient errors (429, 500, 503) and 12s timeout.
@@ -191,8 +204,7 @@ export async function analyzeClaims({ topic, claims = [], sources = [] }) {
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    console.warn('[AnalyzerService] GEMINI_API_KEY is not configured — using fallback evaluation.');
-    return fallbackHeuristicEvaluation(claims, sources);
+    throw new Error('GEMINI_API_KEY is not configured. Real research analyzer requires a valid Gemini API key.');
   }
 
   const cleanSources = prepareSourcePayload(sources);
@@ -267,8 +279,10 @@ Evaluate each claim against the sources according to the grounding rules and ret
     const parsed = JSON.parse(rawContent);
     return validateAndRepairResults(parsed, claims, sources);
   } catch (err) {
-    console.warn(`[AnalyzerService] Real Gemini analysis failed: ${err.message}`);
-    console.warn('[AnalyzerService] Returning safe grounded fallback evaluation.');
-    return fallbackHeuristicEvaluation(claims, sources);
+    const cleanMsg = sanitizeErrorMessage(err.message, apiKey);
+    console.error(`[AnalyzerService] Real Gemini analysis failed: ${cleanMsg}`);
+    throw new Error(`Gemini Analyzer failed: ${cleanMsg}`);
   }
 }
+
+export { validateAndRepairResults, sanitizeErrorMessage, fallbackHeuristicEvaluation };

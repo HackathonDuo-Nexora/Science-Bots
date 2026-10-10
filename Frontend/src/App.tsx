@@ -26,29 +26,51 @@ function App() {
   const phase        = useScienceBotsStore((s) => s.phase)
   const startMission  = useScienceBotsStore((s) => s.startMission)
   const dispatch      = useScienceBotsStore((s) => s.dispatch)
+  const resetStore    = useScienceBotsStore((s) => s.reset)
   const setDisconnected = useScienceBotsStore((s) => s.setDisconnected)
 
   const srcRef = useRef<BackendEventSource | null>(null)
+  const sessionEpochRef = useRef(0)
 
-  // Cleanup event source on unmount or reset
   const stopSource = () => {
     srcRef.current?.stop()
     srcRef.current = null
   }
 
+  const handleReset = () => {
+    sessionEpochRef.current += 1
+    stopSource()
+    resetStore()
+  }
+
   useEffect(() => () => stopSource(), [])
+
+  // If the store is reset from anywhere, drop the live SSE client.
+  useEffect(() => {
+    if (phase === 'start') stopSource()
+  }, [phase])
 
   // Handle mission start — called by StartScreen
   const handleStart = (topic: string) => {
+    sessionEpochRef.current += 1
+    const epoch = sessionEpochRef.current
     stopSource()
     startMission(topic, /* demo */ false)
 
     const src = new BackendEventSource(topic)
     srcRef.current = src
     src.subscribe(
-      (event) => dispatch(event),
-      () => setDisconnected(),
+      (event) => {
+        if (sessionEpochRef.current !== epoch) return
+        if (srcRef.current !== src) return
+        dispatch(event)
+      },
+      () => {
+        if (sessionEpochRef.current !== epoch) return
+        setDisconnected()
+      },
       (err) => {
+        if (sessionEpochRef.current !== epoch) return
         console.error('[App] Backend connection error:', err.message)
         setDisconnected()
       }
@@ -89,7 +111,7 @@ function App() {
         )}
 
         {/* Status overlays (loading, error, disconnected) */}
-        <StatusOverlay />
+        <StatusOverlay onReset={handleReset} />
 
         {/* Bottom panels — only during active/completed phases */}
         {(phase === 'active' || phase === 'completed') && (

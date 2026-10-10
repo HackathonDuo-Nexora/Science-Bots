@@ -56,6 +56,8 @@ export type EventType =
   | 'evidence_found' // researcher found a source
   | 'claim_verified' // claim verification completed
   | 'conflict_detected' // reviewer flagged a conflict
+  | 'insufficient_evidence' // analyzer requested more sources
+  | 'revision_required' // reviewer requested a draft revision
   | 'draft_updated'  // writer produced/updated draft
   | 'paper_final'    // mission complete, final paper ready
   | 'error'          // something went wrong
@@ -129,6 +131,8 @@ export interface Claim {
   sourceIds: string[]
   /** If conflicted, the competing source IDs */
   conflictingSourceIds?: string[]
+  /** Backend confidence 0–1 when supplied */
+  confidence?: number
 }
 
 export interface VerificationResult {

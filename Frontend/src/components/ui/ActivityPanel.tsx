@@ -6,21 +6,35 @@
 
 import { useScienceBotsStore } from '@/store/useScienceBotsStore'
 import type { ResearchEvent } from '@/types'
+import {
+  ArrowRight,
+  Plus,
+  CheckCircle,
+  AlertTriangle,
+  HelpCircle,
+  RefreshCw,
+  FileEdit,
+  Star,
+  X,
+  Dot,
+} from 'lucide-react'
 
 function agentLabel(id: string): string {
   return id.charAt(0).toUpperCase() + id.slice(1)
 }
 
-function eventIcon(type: ResearchEvent['type']): { symbol: string; color: string } {
+function eventIcon(type: ResearchEvent['type']): { Icon: React.ElementType; color: string } {
   switch (type) {
-    case 'handoff':           return { symbol: '→', color: 'var(--blue)' }
-    case 'evidence_found':    return { symbol: '+', color: 'var(--blue)' }
-    case 'claim_verified':    return { symbol: '✓', color: 'var(--green)' }
-    case 'conflict_detected': return { symbol: '!', color: 'var(--red)' }
-    case 'draft_updated':     return { symbol: '~', color: 'var(--amber)' }
-    case 'paper_final':       return { symbol: '*', color: 'var(--green)' }
-    case 'error':             return { symbol: '✕', color: 'var(--red)' }
-    default:                  return { symbol: '·', color: 'var(--text-muted)' }
+    case 'handoff':                 return { Icon: ArrowRight,    color: 'var(--accent)' }
+    case 'evidence_found':          return { Icon: Plus,           color: 'var(--accent)' }
+    case 'claim_verified':          return { Icon: CheckCircle,   color: 'var(--state-green)' }
+    case 'conflict_detected':       return { Icon: AlertTriangle, color: 'var(--state-red)' }
+    case 'insufficient_evidence':   return { Icon: HelpCircle,   color: 'var(--state-amber)' }
+    case 'revision_required':       return { Icon: RefreshCw,    color: 'var(--state-amber)' }
+    case 'draft_updated':           return { Icon: FileEdit,      color: 'var(--state-amber)' }
+    case 'paper_final':             return { Icon: Star,          color: 'var(--state-green)' }
+    case 'error':                   return { Icon: X,             color: 'var(--state-red)' }
+    default:                        return { Icon: Dot,            color: 'var(--dash-text-muted)' }
   }
 }
 
@@ -33,9 +47,10 @@ function relTime(isoTs: string): string {
 
 interface EventRowProps { event: ResearchEvent }
 function EventRow({ event }: EventRowProps) {
-  const { symbol, color } = eventIcon(event.type)
-  const isConflict = event.type === 'conflict_detected'
-  const isFinal    = event.type === 'paper_final'
+  const { Icon, color } = eventIcon(event.type)
+  const isConflict  = event.type === 'conflict_detected'
+  const isNeedsWork = event.type === 'insufficient_evidence' || event.type === 'revision_required'
+  const isFinal     = event.type === 'paper_final'
 
   return (
     <div style={{
@@ -59,14 +74,7 @@ function EventRow({ event }: EventRowProps) {
         flexShrink: 0,
         marginTop: 1,
       }}>
-        <span style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 9,
-          fontWeight: 700,
-          color,
-        }}>
-          {symbol}
-        </span>
+        <Icon size={10} style={{ color }} />
       </div>
 
       {/* Content */}
@@ -76,7 +84,7 @@ function EventRow({ event }: EventRowProps) {
             fontFamily: 'var(--font-mono)',
             fontSize: 9,
             fontWeight: 700,
-            color: isConflict ? 'var(--red)' : isFinal ? 'var(--green)' : 'var(--text-primary)',
+            color: isConflict ? 'var(--red)' : isNeedsWork ? 'var(--state-amber)' : isFinal ? 'var(--green)' : 'var(--dash-text-primary)',
             letterSpacing: '0.06em',
           }}>
             {agentLabel(event.agent)}
@@ -84,7 +92,7 @@ function EventRow({ event }: EventRowProps) {
           <span style={{
             fontFamily: 'var(--font-mono)',
             fontSize: 9,
-            color: 'var(--text-dim)',
+            color: 'var(--dash-text-dim)',
           }}>
             {relTime(event.ts)}
           </span>
@@ -92,7 +100,7 @@ function EventRow({ event }: EventRowProps) {
         <div style={{
           fontFamily: 'var(--font-sans)',
           fontSize: 11,
-          color: isConflict ? 'var(--red)' : 'var(--text-muted)',
+          color: isConflict ? 'var(--red)' : isNeedsWork ? '#8A6A20' : 'var(--dash-text-muted)',
           lineHeight: 1.35,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
@@ -133,7 +141,7 @@ export function ActivityPanel() {
             fontFamily: 'var(--font-mono)',
             fontSize: 9,
             fontWeight: 700,
-            color: 'var(--text-muted)',
+            color: 'var(--dash-text-muted)',
             letterSpacing: '0.1em',
           }}>
             ACTIVITY
@@ -141,7 +149,7 @@ export function ActivityPanel() {
           <span style={{
             fontFamily: 'var(--font-mono)',
             fontSize: 9,
-            color: 'var(--text-dim)',
+            color: 'var(--dash-text-dim)',
           }}>
             {events.length} events
           </span>
@@ -155,7 +163,7 @@ export function ActivityPanel() {
               textAlign: 'center',
               fontFamily: 'var(--font-sans)',
               fontSize: 11,
-              color: 'var(--text-dim)',
+              color: 'var(--dash-text-dim)',
             }}>
               Waiting for events...
             </div>
